@@ -1,12 +1,24 @@
 "use client";
 import { useState, useEffect } from 'react';
-// IMPORTANTE: Asegúrate de que esta ruta apunte a donde creaste tu firebase.js
-import { db, storage } from '@/app/firebase';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// Configuración de Firebase integrada directamente para evitar problemas de rutas en Vercel
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+};
+
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getFirestore(app);
+const storage = getStorage(app);
 
 export default function FinanzasPage() {
-  // Estados del formulario
   const [tipoMovimiento, setTipoMovimiento] = useState('');
   const [categoria, setCategoria] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -14,20 +26,17 @@ export default function FinanzasPage() {
   const [fechaMovimiento, setFechaMovimiento] = useState('');
   const [jugador, setJugador] = useState('');
   
-  // Estados para archivos y control
   const [archivoSeleccionado, setArchivoSeleccionado] = useState(null);
   const [nombreArchivo, setNombreArchivo] = useState('');
   const [idEditando, setIdEditando] = useState(null);
   const [procesando, setProcesando] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState('Todos');
 
-  // Estado de la base de datos
   const [transacciones, setTransacciones] = useState([]);
 
   const categoriasIngreso = ["Cuotas de Participación", "Auspicios", "Subsidios/Proyectos", "Recaudación Entradas", "Venta de Indumentaria", "Otros Ingresos"];
   const categoriasEgreso = ["Arbitraje", "Arriendo de Cancha", "Implementos Deportivos", "Botiquín e Insumos Médicos", "Movilización/Transporte", "Inscripción a Torneos", "Otros Gastos"];
 
-  // 1. CARGAR DATOS DESDE FIREBASE
   const cargarDatos = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'finanzas'));
@@ -35,7 +44,6 @@ export default function FinanzasPage() {
         id: doc.id,
         ...doc.data()
       }));
-      // Ordenar por fecha de movimiento (más reciente primero)
       datos.sort((a, b) => new Date(b.fechaMovimiento) - new Date(a.fechaMovimiento));
       setTransacciones(datos);
     } catch (error) {
@@ -43,12 +51,10 @@ export default function FinanzasPage() {
     }
   };
 
-  // Ejecutar al cargar la página
   useEffect(() => {
     cargarDatos();
   }, []);
 
-  // 2. GUARDAR O ACTUALIZAR REGISTRO
   const procesarRegistro = async () => {
     if (!tipoMovimiento || !descripcion || !monto || !fechaMovimiento) {
       alert("Por favor, completa los campos obligatorios.");
@@ -59,7 +65,6 @@ export default function FinanzasPage() {
     try {
       let urlComprobante = '';
 
-      // Si hay un archivo nuevo, lo subimos a Storage
       if (archivoSeleccionado) {
         const storageRef = ref(storage, `comprobantes/${Date.now()}_${archivoSeleccionado.name}`);
         await uploadBytes(storageRef, archivoSeleccionado);
@@ -80,7 +85,6 @@ export default function FinanzasPage() {
         estado: tipoMovimiento === 'Multa' ? 'Pendiente' : 'Pagado',
       };
 
-      // Solo actualizamos la URL si se subió un archivo nuevo
       if (urlComprobante) {
         datosRegistro.comprobanteURL = urlComprobante;
       }
@@ -93,7 +97,7 @@ export default function FinanzasPage() {
       }
 
       cancelarEdicion();
-      await cargarDatos(); // Refrescar tabla
+      await cargarDatos(); 
       
     } catch (error) {
       console.error("Error procesando el registro: ", error);
@@ -103,7 +107,6 @@ export default function FinanzasPage() {
     }
   };
 
-  // 3. ELIMINAR REGISTRO
   const eliminarRegistro = async (id) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este registro contable? Esta acción no se puede deshacer.')) {
       try {
@@ -116,7 +119,6 @@ export default function FinanzasPage() {
     }
   };
 
-  // 4. CONTROLADORES DEL FORMULARIO
   const iniciarEdicion = (tx) => {
     setIdEditando(tx.id);
     setTipoMovimiento(tx.tipo);
@@ -142,7 +144,6 @@ export default function FinanzasPage() {
     setNombreArchivo('');
   };
 
-  // 5. CÁLCULOS PARA LAS TARJETAS (Basados en datos reales)
   const totalCaja = transacciones.reduce((acc, tx) => tx.estado === 'Pagado' ? acc + tx.monto : acc, 0);
   const ingresosMes = transacciones.filter(tx => tx.tipo === 'Ingreso' && tx.estado === 'Pagado').reduce((acc, tx) => acc + tx.monto, 0);
   const egresosMes = transacciones.filter(tx => tx.tipo === 'Egreso').reduce((acc, tx) => acc + tx.monto, 0);
@@ -165,7 +166,6 @@ export default function FinanzasPage() {
         </div>
       </div>
 
-      {/* PANEL SUPERIOR: Resumen Dinámico */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full max-w-7xl mx-auto mb-8">
         <div className="bg-neutral-800 p-6 rounded-lg border border-purple-900/50 flex flex-col justify-center shadow-lg">
           <span className="text-gray-400 text-sm font-medium mb-1">Caja Actual</span>
@@ -187,7 +187,6 @@ export default function FinanzasPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full max-w-7xl mx-auto">
         
-        {/* PANEL IZQUIERDO: Formulario Contable */}
         <div className={`p-6 rounded-lg shadow-lg border transition-all duration-300 h-fit ${idEditando ? 'bg-purple-900/20 border-purple-500' : 'bg-neutral-800 border-purple-900/50'}`}>
           <h2 className="text-2xl font-semibold mb-6 text-white border-b border-neutral-700 pb-2 flex justify-between items-center">
             {idEditando ? '✏️ Editando Registro' : 'Registrar Documento'}
@@ -320,7 +319,6 @@ export default function FinanzasPage() {
           </form>
         </div>
 
-        {/* PANEL DERECHO: Libro Mayor */}
         <div className="lg:col-span-2 bg-neutral-800 p-6 rounded-lg shadow-lg border border-purple-900/50 overflow-hidden flex flex-col">
           <div className="flex justify-between items-center border-b border-neutral-700 pb-4 mb-4">
             <h2 className="text-2xl font-semibold text-white">Historial Contable</h2>
