@@ -406,7 +406,7 @@ export default function FinanzasPage() {
                             title="Eliminar" 
                             className="p-1.5 rounded bg-neutral-700 hover:bg-red-600 text-gray-300 hover:text-white transition-colors"
                           >
-                            🗑️
+                            🗑️ 
                           </button>
                         </div>
                       </td>
