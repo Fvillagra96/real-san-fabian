@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from 'react';
 // IMPORTANTE: Asegúrate de que esta ruta apunte a donde creaste tu firebase.js
-import { db, storage } from '../firebase'; 
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'real-san-fabian/lib/firebase,js';
+import { db, storage } from '../../../lib/firebase';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function FinanzasPage() {
