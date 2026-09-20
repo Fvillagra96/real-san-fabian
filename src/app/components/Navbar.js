@@ -3,7 +3,8 @@ import Image from 'next/image';
 
 export default function Navbar() {
   return (
-    <nav className="bg-black border-b border-purple-800 p-4 sticky top-0 z-50">
+    // Hemos quitado "sticky top-0 z-50" para que el menú fluya con la página
+    <nav className="bg-black border-b border-purple-800 p-4">
       <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
         
         {/* Logo y Nombre del Club */}
@@ -35,7 +36,6 @@ export default function Navbar() {
             Inscripción
           </Link>
           
-          {/* Nuevo enlace destacado para el Torneo Express */}
           <Link href="/torneo-express" className="bg-purple-900/40 border border-purple-700 text-purple-300 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded transition-all font-bold flex items-center gap-1 shadow-[0_0_10px_rgba(168,85,247,0.2)]">
             ⚡ Torneo en Vivo
           </Link>

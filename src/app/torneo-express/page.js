@@ -473,11 +473,16 @@ export default function TorneoExpressPage() {
       )}
 
       {/* ========================================= */}
-      {/* MODAL: MESA DE CONTROL DE PARTIDO EN VIVO (RESPONSIVO) */}
+      {/* MODAL: MESA DE CONTROL DE PARTIDO EN VIVO */}
       {/* ========================================= */}
       {partidoActivo && (
-        <div className="fixed inset-0 bg-black/95 flex items-start md:items-center justify-center z-[100] p-0 md:p-6 animate-fade-in overflow-hidden">
-          <div className="bg-neutral-900 w-full h-full md:h-auto md:max-w-5xl md:rounded-xl md:border-2 md:border-purple-500 flex flex-col relative overflow-hidden">
+        <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-[100] p-0 md:p-6 animate-fade-in">
+          {/* 
+              CAMBIO CLAVE AQUÍ:
+              En pantallas grandes es una ventana (max-w-5xl, max-h-[90vh], rounded).
+              En celulares es PANTALLA COMPLETA (w-full h-full rounded-none).
+          */}
+          <div className="bg-neutral-900 w-full h-full md:h-auto md:max-h-[90vh] md:max-w-5xl md:rounded-xl md:border-2 md:border-purple-500 flex flex-col relative">
             
             {/* Cabecera del Partido Fija arriba */}
             <div className="flex justify-between items-center bg-black p-3 md:p-4 border-b border-neutral-800 shrink-0 shadow-lg z-10 pt-safe-top">
@@ -501,8 +506,9 @@ export default function TorneoExpressPage() {
                <h2 className="text-sm md:text-2xl font-black text-white w-[35%] text-right truncate px-2">{partidoActivo.visita}</h2>
             </div>
 
-            {/* Listado de Planteles (Scrollable) */}
-            <div className="flex flex-col md:flex-row gap-0 md:gap-6 flex-1 overflow-y-auto overflow-x-hidden p-2 md:p-6 pb-24 md:pb-6">
+            {/* Listado de Planteles (Área con scroll interno) */}
+            {/* CAMBIO CLAVE AQUÍ: Se asegura que el contenedor tome el espacio sobrante (flex-1) y tenga scroll automático (overflow-y-auto) */}
+            <div className="flex flex-col md:flex-row gap-0 md:gap-6 flex-1 overflow-y-auto p-2 md:p-6">
               
               {/* Plantel Local */}
               <div className="flex-1 md:bg-neutral-800 md:p-4 rounded-lg md:border md:border-neutral-700 mb-6 md:mb-0">
@@ -569,15 +575,15 @@ export default function TorneoExpressPage() {
             </div>
 
             {/* Botonera Fija Abajo */}
-            <div className="absolute md:relative bottom-0 left-0 w-full flex gap-2 md:gap-4 p-3 md:p-0 md:mt-6 md:pt-6 md:border-t md:border-neutral-700 shrink-0 bg-neutral-900 border-t border-neutral-800 pb-safe-bottom">
-              <button onClick={() => setPartidoActivo(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-3 md:py-4 rounded-lg transition-colors border border-neutral-600 text-sm md:text-base">Cerrar</button>
+            {/* CAMBIO CLAVE AQUÍ: Se ancla la botonera al fondo del contenedor con shrink-0 para que nunca la oculte el scroll */}
+            <div className="w-full flex gap-2 md:gap-4 p-3 md:p-6 shrink-0 bg-neutral-900 border-t border-neutral-800 pb-safe-bottom z-10">
+              <button onClick={() => setPartidoActivo(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-3 md:py-4 rounded-lg transition-colors border border-neutral-600 text-sm md:text-base shadow-md">Cerrar</button>
               <button onClick={finalizarPartido} className="flex-[2] bg-green-600 active:bg-green-700 md:hover:bg-green-500 text-white font-black py-3 md:py-4 rounded-lg transition-colors shadow-lg shadow-green-900/40 text-sm md:text-lg uppercase tracking-wide truncate">🏁 Finalizar Partido</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CSS para utilidades extra (Safe areas de iOS y scrollbars ocultos) */}
       <style dangerouslySetInnerHTML={{__html: `
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -585,10 +591,9 @@ export default function TorneoExpressPage() {
         .pb-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0.75rem); }
       `}} />
 
-      {/* Modal CRUD Jugadores igual que antes */}
+      {/* Modal CRUD Jugadores */}
       {modalJugador && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 animate-fade-in backdrop-blur-sm">
-           {/* ... Contenido del modal CRUD de jugadores sin cambios estructurales ... */}
            <div className="bg-neutral-800 p-6 rounded-lg w-full max-w-lg border border-purple-900/50 shadow-2xl flex flex-col max-h-[90vh]">
             <h2 className="text-xl md:text-2xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">Administrar Planteles</h2>
             <select value={equipoSeleccionadoId} onChange={e => setEquipoSeleccionadoId(e.target.value)} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-purple-900 focus:border-purple-500 outline-none mb-4 text-sm md:text-base"><option value="">-- Elige un equipo --</option>{equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre} ({eq.grupo})</option>)}</select>
