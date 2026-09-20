@@ -87,7 +87,6 @@ export default function TorneoExpressPage() {
       setJugadores([]);
       setPartidos([]);
       alert("🗑️ Torneo reseteado exitosamente. La base de datos está completamente en blanco, lista para una nueva carga masiva.");
-
     } catch (error) {
       alert("Error al intentar limpiar la base de datos.");
     } finally {
@@ -170,7 +169,12 @@ export default function TorneoExpressPage() {
         }
         alert("✅ Carga Masiva completada.");
         await cargarDatos(); 
-      } catch (error) { alert("Error: " + error.message); } finally { setProcesandoExcel(false); e.target.value = null; }
+      } catch (error) { 
+        alert("Error: " + error.message); 
+      } finally { 
+        setProcesandoExcel(false); 
+        e.target.value = null; 
+      }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -250,7 +254,9 @@ export default function TorneoExpressPage() {
       });
       setPartidoActivo(null);
       await cargarDatos();
-    } catch (error) { alert("Error guardando progreso."); }
+    } catch (error) { 
+      alert("Error guardando progreso."); 
+    }
   };
 
   const finalizarPartido = async () => {
@@ -259,7 +265,10 @@ export default function TorneoExpressPage() {
     const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
     const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
 
-    if (!eqLoc || !eqVis) { alert("Error: Equipos no encontrados."); return; }
+    if (!eqLoc || !eqVis) { 
+      alert("Error: Equipos no encontrados."); 
+      return; 
+    }
 
     let golesLoc = 0; let golesVis = 0;
     let faltasLoc = 0; let faltasVis = 0;
@@ -339,7 +348,9 @@ export default function TorneoExpressPage() {
       setPartidoActivo(null);
       await cargarDatos();
 
-    } catch (error) { alert("Error guardando datos."); }
+    } catch (error) { 
+      alert("Error guardando datos."); 
+    }
   };
 
   const revertirPartido = async () => {
@@ -347,7 +358,10 @@ export default function TorneoExpressPage() {
 
     const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
     const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
-    if (!eqLoc || !eqVis) { alert("Error: Equipos no encontrados."); return; }
+    if (!eqLoc || !eqVis) { 
+      alert("Error: Equipos no encontrados."); 
+      return; 
+    }
 
     try {
         const restarEquipo = async (eq, gf, gc, faltas, pts, pg, pe, pp) => {
@@ -400,7 +414,9 @@ export default function TorneoExpressPage() {
         setPartidoActivo(null);
         await cargarDatos();
 
-    } catch (error) { alert("Error revirtiendo el partido."); }
+    } catch (error) { 
+      alert("Error revirtiendo el partido."); 
+    }
   };
 
   const agregarJugador = async () => { 
@@ -411,15 +427,25 @@ export default function TorneoExpressPage() {
       setNuevoNombreJugador('');
     } catch (error) {}
   };
+
   const eliminarJugador = async (id) => {
-    if(window.confirm("¿Eliminar jugador?")) { await deleteDoc(doc(db, 'torneo_jugadores', id)); setJugadores(jugadores.filter(j => j.id !== id)); }
+    if(window.confirm("¿Eliminar jugador?")) { 
+      await deleteDoc(doc(db, 'torneo_jugadores', id)); 
+      setJugadores(jugadores.filter(j => j.id !== id)); 
+    }
   };
-  const iniciarEdicionJugador = (jugador) => { setJugadorEditando(jugador.id); setNombreEdicion(jugador.nombre); };
+
+  const iniciarEdicionJugador = (jugador) => { 
+    setJugadorEditando(jugador.id); 
+    setNombreEdicion(jugador.nombre); 
+  };
+
   const guardarEdicionJugador = async (id) => {
     await updateDoc(doc(db, 'torneo_jugadores', id), { nombre: nombreEdicion });
     setJugadores(jugadores.map(j => j.id === id ? { ...j, nombre: nombreEdicion } : j));
     setJugadorEditando(null);
   };
+
   const eliminarEquipo = async (idEquipo) => {
     if(window.confirm("🚨 ¿ESTÁS SEGURO? Se borrará todo.")) {
       try {
@@ -431,6 +457,34 @@ export default function TorneoExpressPage() {
         setJugadores(jugadores.filter(j => j.equipoId !== idEquipo));
       } catch (error) {}
     }
+  };
+
+  const renderResumenEquipo = (nombreEquipo) => {
+    const eq = equipos.find(e => normalizar(e.nombre) === normalizar(nombreEquipo));
+    if (!eq) return <span className="text-xs text-gray-600 italic">Sin eventos</span>;
+
+    const eventos = [];
+    Object.keys(statsPartido).forEach(jId => {
+      const jStats = statsPartido[jId];
+      const jug = jugadores.find(j => j.id === jId);
+      if (jug && jug.equipoId === eq.id) {
+        if (jStats.goles > 0) eventos.push({ id: `g-${jId}`, text: `⚽ ${jug.nombre} ${jStats.goles > 1 ? '('+jStats.goles+')' : ''}` });
+        if (jStats.amarillas > 0) eventos.push({ id: `a-${jId}`, text: `🟨 ${jug.nombre} ${jStats.amarillas > 1 ? '('+jStats.amarillas+')' : ''}` });
+        if (jStats.rojas > 0) eventos.push({ id: `r-${jId}`, text: `🟥 ${jug.nombre} ${jStats.rojas > 1 ? '('+jStats.rojas+')' : ''}` });
+      }
+    });
+
+    if (eventos.length === 0) return <span className="text-xs text-gray-600 italic">Sin eventos</span>;
+
+    return (
+      <div className="flex flex-col gap-1">
+        {eventos.map(ev => (
+          <div key={ev.id} className="text-[10px] md:text-xs text-gray-300 truncate">
+            {ev.text}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const RenderTabla = ({ titulo, grupoFiltro }) => {
@@ -683,6 +737,17 @@ export default function TorneoExpressPage() {
                  </span>
                </div>
                <h2 className="text-sm md:text-2xl font-black text-white w-[35%] text-right truncate px-2">{partidoActivo.visita}</h2>
+            </div>
+
+            <div className="bg-neutral-900 border-b border-neutral-800 p-2 md:p-3 shrink-0 flex justify-between z-10 shadow-md">
+               <div className="w-[45%] pl-2">
+                 <h4 className="text-[10px] md:text-xs text-gray-500 font-bold uppercase mb-1 border-b border-neutral-700 pb-1">Eventos Local</h4>
+                 {renderResumenEquipo(partidoActivo.local)}
+               </div>
+               <div className="w-[45%] text-right pr-2">
+                 <h4 className="text-[10px] md:text-xs text-gray-500 font-bold uppercase mb-1 border-b border-neutral-700 pb-1 flex justify-end">Eventos Visita</h4>
+                 {renderResumenEquipo(partidoActivo.visita)}
+               </div>
             </div>
 
             <div className={`flex flex-col md:flex-row gap-0 md:gap-6 flex-1 overflow-y-auto p-2 md:p-6 ${partidoActivo.estado === 'Finalizado' ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
