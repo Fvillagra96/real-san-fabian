@@ -6,12 +6,13 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Configuración de Firebase integrada directamente para evitar problemas de rutas en Vercel
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  apiKey: "AIzaSyCyfuU05U_gEYQiIA15GcAWZM8uRyqXdjY",
+  authDomain: "real-san-fabian.firebaseapp.com",
+  databaseURL: "https://real-san-fabian-default-rtdb.firebaseio.com",
+  projectId: "real-san-fabian",
+  storageBucket: "real-san-fabian.firebasestorage.app",
+  messagingSenderId: "29980827155",
+  appId: "1:29980827155:web:d60492d5f0c63aa47de9e6"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
