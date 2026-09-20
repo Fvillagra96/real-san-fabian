@@ -152,12 +152,16 @@ export default function TorneoExpressPage() {
     
     jugadores.forEach(j => {
       if ((eqLoc && j.equipoId === eqLoc.id) || (eqVis && j.equipoId === eqVis.id)) {
-        // Si el partido está finalizado, cargamos un "fantasma" de lo que podría haber sido para no ensuciar hasta revertir
         statsIniciales[j.id] = { goles: 0, amarillas: 0, rojas: 0, arquero: false };
       }
     });
 
-    setStatsPartido(statsIniciales);
+    // Cargar registro previo si existe (para partidos pausados o finalizados)
+    if (partido.registroJugadores) {
+       setStatsPartido(partido.registroJugadores);
+    } else {
+       setStatsPartido(statsIniciales);
+    }
     
     // Guardar copia exacta de cómo está el partido AHORA en caso de revertir
     if (partido.estado === 'Finalizado') {
@@ -166,7 +170,6 @@ export default function TorneoExpressPage() {
            golesVisita: partido.golesVisita,
            faltasLocal: partido.faltasLocal || 0,
            faltasVisita: partido.faltasVisita || 0,
-           // Asumimos que los puntos dados fueron:
            puntosLocales: partido.golesLocal > partido.golesVisita ? 3 : (partido.golesLocal === partido.golesVisita ? 1 : 0),
            puntosVisita: partido.golesVisita > partido.golesLocal ? 3 : (partido.golesLocal === partido.golesVisita ? 1 : 0),
            pgLocales: partido.golesLocal > partido.golesVisita ? 1 : 0,
@@ -175,14 +178,14 @@ export default function TorneoExpressPage() {
            pgVisita: partido.golesVisita > partido.golesLocal ? 1 : 0,
            peVisita: partido.golesLocal === partido.golesVisita ? 1 : 0,
            ppVisita: partido.golesVisita < partido.golesLocal ? 1 : 0,
+           registroJugadores: partido.registroJugadores || {}
        });
     }
   };
 
   const modificarStat = (jugadorId, tipo, operacion) => {
-    // Bloquear edición si está finalizado (debe revertir primero)
     if (partidoActivo.estado === 'Finalizado') {
-        alert("El partido está finalizado. Debes 'Revertir Resultado' abajo para poder editar.");
+        alert("El partido está finalizado. Debes presionar '⚠️ Revertir Resultado' abajo para poder editar.");
         return;
     }
 
@@ -198,8 +201,30 @@ export default function TorneoExpressPage() {
     });
   };
 
+  const guardarCambiosParciales = async () => {
+    let golesLoc = 0; let golesVis = 0;
+    const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
+    const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
+
+    Object.keys(statsPartido).forEach(jId => {
+      const jugador = jugadores.find(j => j.id === jId);
+      if (jugador && eqLoc && jugador.equipoId === eqLoc.id) golesLoc += statsPartido[jId].goles;
+      else if (jugador && eqVis && jugador.equipoId === eqVis.id) golesVis += statsPartido[jId].goles;
+    });
+
+    try {
+      await updateDoc(doc(db, 'torneo_partidos', partidoActivo.id), {
+        golesLocal: golesLoc,
+        golesVisita: golesVis,
+        registroJugadores: statsPartido
+      });
+      setPartidoActivo(null);
+      await cargarDatos();
+    } catch (error) { console.error(error); alert("Error guardando progreso."); }
+  };
+
   const finalizarPartido = async () => {
-    if (!window.confirm("¿Seguro que deseas finalizar el encuentro? Esto actualizará las tablas automáticamente.")) return;
+    if (!window.confirm("¿Seguro que deseas finalizar? Los goles y puntos se sumarán a la tabla oficial.")) return;
 
     const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
     const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
@@ -216,11 +241,11 @@ export default function TorneoExpressPage() {
       if (jugador) {
         if (jugador.equipoId === eqLoc.id) {
           golesLoc += jStats.goles;
-          faltasLoc += (jStats.amarillas + jStats.rojas); // FA = Amarillas + Rojas
+          faltasLoc += (jStats.amarillas + jStats.rojas);
           if (jStats.arquero) arqueroLocId = jId;
         } else if (jugador.equipoId === eqVis.id) {
           golesVis += jStats.goles;
-          faltasVis += (jStats.amarillas + jStats.rojas); // FA = Amarillas + Rojas
+          faltasVis += (jStats.amarillas + jStats.rojas);
           if (jStats.arquero) arqueroVisId = jId;
         }
       }
@@ -273,33 +298,33 @@ export default function TorneoExpressPage() {
       await actualizarEquipo(eqLoc, golesLoc, golesVis, faltasLoc);
       await actualizarEquipo(eqVis, golesVis, golesLoc, faltasVis);
 
-      // 3. Finalizar Partido
+      // 3. Finalizar Partido y guardar caja negra de estadísticas
       await updateDoc(doc(db, 'torneo_partidos', partidoActivo.id), {
         estado: 'Finalizado',
         golesLocal: golesLoc,
         golesVisita: golesVis,
         faltasLocal: faltasLoc,
-        faltasVisita: faltasVis
+        faltasVisita: faltasVis,
+        registroJugadores: statsPartido
       });
 
       alert("⚽ ¡Partido Finalizado y tablas actualizadas!");
       setPartidoActivo(null);
       await cargarDatos();
 
-    } catch (error) { console.error("Error al finalizar:", error); alert("Error guardando datos."); }
+    } catch (error) { console.error(error); alert("Error guardando datos."); }
   };
 
   // --- REVERTIR PARTIDO ---
   const revertirPartido = async () => {
-    if (!window.confirm("⚠️ PELIGRO: ¿Estás seguro de revertir este partido? Se restarán los puntos, goles y faltas otorgados a los equipos. Tendrás que volver a cargar todos los goles y tarjetas de los jugadores desde cero para este encuentro.")) return;
+    if (!window.confirm("⚠️ PELIGRO: Esto restará los puntos y goles de este partido a la tabla general y a los jugadores. ¿Continuar?")) return;
 
     const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
     const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
-    
     if (!eqLoc || !eqVis) { alert("Error: Equipos no encontrados."); return; }
 
     try {
-        // Restar stats a los equipos usando la copia exacta (statsOriginalesReversion)
+        // 1. Restar stats a los equipos
         const restarEquipo = async (eq, gf, gc, faltas, pts, pg, pe, pp) => {
             await updateDoc(doc(db, 'torneo_equipos', eq.id), {
                 pj: Math.max(0, (eq.pj || 0) - 1),
@@ -313,27 +338,46 @@ export default function TorneoExpressPage() {
                 pf: Math.max(0, (eq.pf || 0) - pts)
             });
         };
-
         await restarEquipo(eqLoc, statsOriginalesReversion.golesLocal, statsOriginalesReversion.golesVisita, statsOriginalesReversion.faltasLocal, statsOriginalesReversion.puntosLocales, statsOriginalesReversion.pgLocales, statsOriginalesReversion.peLocales, statsOriginalesReversion.ppLocales);
         await restarEquipo(eqVis, statsOriginalesReversion.golesVisita, statsOriginalesReversion.golesLocal, statsOriginalesReversion.faltasVisita, statsOriginalesReversion.puntosVisita, statsOriginalesReversion.pgVisita, statsOriginalesReversion.peVisita, statsOriginalesReversion.ppVisita);
 
-        // Volver el partido a pendiente
+        // 2. Restar stats a los jugadores usando la caja negra
+        const regJugadores = statsOriginalesReversion.registroJugadores || {};
+        const updatesJugadores = Object.keys(regJugadores).map(async (jId) => {
+            const statsViejas = regJugadores[jId];
+            const jugadorGlobal = jugadores.find(j => j.id === jId);
+            if (!jugadorGlobal) return;
+
+            let gcRestar = 0;
+            if (statsViejas.arquero) {
+                if (jugadorGlobal.equipoId === eqLoc.id) gcRestar = statsOriginalesReversion.golesVisita;
+                else gcRestar = statsOriginalesReversion.golesLocal;
+            }
+
+            await updateDoc(doc(db, 'torneo_jugadores', jId), {
+                goles: Math.max(0, (jugadorGlobal.goles || 0) - (statsViejas.goles || 0)),
+                amarillas: Math.max(0, (jugadorGlobal.amarillas || 0) - (statsViejas.amarillas || 0)),
+                rojas: Math.max(0, (jugadorGlobal.rojas || 0) - (statsViejas.rojas || 0)),
+                golesEnContra: Math.max(0, (jugadorGlobal.golesEnContra || 0) - gcRestar)
+            });
+        });
+        await Promise.all(updatesJugadores);
+
+        // 3. Volver el partido a pendiente
         await updateDoc(doc(db, 'torneo_partidos', partidoActivo.id), {
             estado: 'Pendiente',
             golesLocal: 0,
             golesVisita: 0,
             faltasLocal: 0,
-            faltasVisita: 0
+            faltasVisita: 0,
+            registroJugadores: {}
         });
 
-        alert("🔙 Partido revertido con éxito. Los equipos perdieron los puntos de este encuentro. Ahora está en estado 'Pendiente' para que lo rearmes.");
+        alert("🔙 Partido revertido con éxito. Ahora está 'Pendiente' para que corrijas los errores.");
         setPartidoActivo(null);
         await cargarDatos();
 
-    } catch (error) {
-        console.error("Error revirtiendo:", error);
-        alert("Error al intentar revertir el partido.");
-    }
+    } catch (error) { console.error(error); alert("Error revirtiendo el partido."); }
   };
 
 
@@ -380,7 +424,6 @@ export default function TorneoExpressPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-center text-xs md:text-sm text-gray-300 min-w-max">
             <thead className="bg-neutral-900/50 text-purple-400">
-              {/* ORDEN EXACTO SOLICITADO: Equipo, PJ, FA, PG, PE, PP, GF, GC, DG, PF */}
               <tr>
                 <th className="p-2 text-left sticky left-0 bg-neutral-900 md:bg-transparent z-10 md:z-0 min-w-[120px]">Equipo</th>
                 <th className="p-2" title="Partidos Jugados">PJ</th>
@@ -491,7 +534,6 @@ export default function TorneoExpressPage() {
                 onClick={() => abrirPartido(partido)}
                 className={`w-full p-4 md:p-6 rounded-lg border shadow-lg flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4 transition-transform cursor-pointer ${partido.estado === 'Finalizado' ? 'bg-neutral-900 border-neutral-700 opacity-80' : 'bg-neutral-800 border-purple-500 active:scale-95 md:hover:scale-[1.01]'}`}
               >
-                {/* Diseño Móvil */}
                 <div className="flex w-full justify-between items-center md:hidden">
                   <div className="flex flex-col items-center flex-1 w-1/3">
                     <span className="text-sm font-bold text-white mb-1 truncate w-full px-1">{partido.local}</span>
@@ -505,7 +547,7 @@ export default function TorneoExpressPage() {
                     <span className="text-3xl font-black text-white">{partido.golesVisita}</span>
                   </div>
                 </div>
-                {/* Diseño Móvil: Estado */}
+                
                 <div className="flex flex-col items-center justify-center w-full md:hidden mt-2 border-t border-neutral-700 pt-2">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-widest ${partido.estado === 'Finalizado' ? 'bg-neutral-700 text-gray-400 border-neutral-600' : 'bg-red-500/20 text-red-400 border-red-500/50 animate-pulse'}`}>
                     {partido.estado}
@@ -514,7 +556,6 @@ export default function TorneoExpressPage() {
                   {partido.estado === 'Finalizado' && <span className="text-amber-500 text-[10px] mt-1 italic">Toca para Revertir</span>}
                 </div>
 
-                {/* Diseño Desktop */}
                 <div className="hidden md:flex flex-col items-center flex-1">
                   <span className="text-xl font-bold text-white mb-2">{partido.local}</span>
                   <span className="text-4xl font-black text-white w-12 text-center">{partido.golesLocal}</span>
@@ -525,7 +566,7 @@ export default function TorneoExpressPage() {
                   </span>
                   <span className="text-gray-500 text-sm">{partido.grupo}</span>
                   {partido.estado === 'Finalizado' ? (
-                     <span className="text-amber-500 text-xs mt-2 underline">Toca para revertir resultado</span>
+                     <span className="text-amber-500 text-xs mt-2 underline">Toca para Revertir Resultado</span>
                   ) : (
                      <span className="text-purple-400 text-xs mt-2 underline">Toca para administrar partido</span>
                   )}
@@ -563,12 +604,12 @@ export default function TorneoExpressPage() {
             </ul>
           </div>
 
-          {/* TABLA ARQUEROS MEJORADA (SOLO LOS QUE HAN SIDO MARCADOS COMO ARQUEROS) */}
+          {/* TABLA ARQUEROS MEJORADA */}
           <div className="bg-neutral-800 p-4 md:p-6 rounded-lg border border-neutral-700 shadow-lg">
             <h3 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">🧤 Arqueros Menos Batidos</h3>
             <ul className="flex flex-col gap-2">
               {cargando ? <li className="text-purple-400">Cargando...</li> : 
-                jugadores.filter(j => j.fueArqueroAlgunaVez === true).length === 0 ? <li className="text-gray-500 text-sm italic">Nadie ha sido marcado como arquero (🧤) en un partido aún.</li> :
+                jugadores.filter(j => j.fueArqueroAlgunaVez === true).length === 0 ? <li className="text-gray-500 text-sm italic">Nadie ha sido marcado como arquero en un partido aún.</li> :
                 jugadores.filter(j => j.fueArqueroAlgunaVez === true).sort((a,b) => (a.golesEnContra || 0) - (b.golesEnContra || 0)).slice(0,5).map((jug, index) => (
                 <li key={jug.id} className="flex justify-between items-center p-2 md:p-3 bg-neutral-900/50 rounded border border-neutral-800 text-sm md:text-base">
                   <div className="flex gap-2 md:gap-3 items-center">
@@ -598,7 +639,7 @@ export default function TorneoExpressPage() {
       )}
 
       {/* ========================================= */}
-      {/* MODAL: MESA DE CONTROL (AHORA CON BOTÓN REVERTIR SI ESTÁ FINALIZADO) */}
+      {/* MODAL: MESA DE CONTROL CON BOTÓN DE GUARDADO EN VIVO Y REVERTIR */}
       {/* ========================================= */}
       {partidoActivo && (
         <div className="fixed inset-0 bg-black/95 flex items-start md:items-center justify-center z-[100] p-0 md:p-6 animate-fade-in overflow-hidden">
@@ -627,7 +668,6 @@ export default function TorneoExpressPage() {
                <h2 className="text-sm md:text-2xl font-black text-white w-[35%] text-right truncate px-2">{partidoActivo.visita}</h2>
             </div>
 
-            {/* Listado de Planteles (Bloqueado visualmente si está finalizado) */}
             <div className={`flex flex-col md:flex-row gap-0 md:gap-6 flex-1 overflow-y-auto p-2 md:p-6 ${partidoActivo.estado === 'Finalizado' ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
               
               {/* Plantel Local */}
@@ -693,14 +733,16 @@ export default function TorneoExpressPage() {
               </div>
             </div>
 
-            {/* Botonera Inteligente (Cambia si está finalizado) */}
-            <div className="w-full flex gap-2 md:gap-4 p-3 md:p-6 shrink-0 bg-neutral-900 border-t border-neutral-800 pb-safe-bottom z-10">
-              <button onClick={() => setPartidoActivo(null)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-3 md:py-4 rounded-lg transition-colors border border-neutral-600 text-sm md:text-base shadow-md">Cerrar</button>
+            <div className="w-full flex flex-wrap gap-2 md:gap-4 p-3 md:p-6 shrink-0 bg-neutral-900 border-t border-neutral-800 pb-safe-bottom z-10">
+              <button onClick={() => setPartidoActivo(null)} className="flex-[1] bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-3 md:py-4 rounded-lg transition-colors border border-neutral-600 text-xs md:text-base shadow-md">Cerrar</button>
               
               {partidoActivo.estado === 'Finalizado' ? (
-                 <button onClick={revertirPartido} className="flex-[2] bg-red-900/80 active:bg-red-800 md:hover:bg-red-700 text-red-100 font-black py-3 md:py-4 rounded-lg transition-colors border border-red-700 shadow-lg text-sm md:text-lg uppercase tracking-wide truncate">⚠️ Revertir Resultado</button>
+                 <button onClick={revertirPartido} className="flex-[2] bg-red-900/80 active:bg-red-800 md:hover:bg-red-700 text-red-100 font-black py-3 md:py-4 rounded-lg transition-colors border border-red-700 shadow-lg text-xs md:text-lg uppercase tracking-wide truncate">⚠️ Revertir</button>
               ) : (
-                 <button onClick={finalizarPartido} className="flex-[2] bg-green-600 active:bg-green-700 md:hover:bg-green-500 text-white font-black py-3 md:py-4 rounded-lg transition-colors shadow-lg shadow-green-900/40 text-sm md:text-lg uppercase tracking-wide truncate">🏁 Finalizar Partido</button>
+                <>
+                 <button onClick={guardarCambiosParciales} className="flex-[1.5] bg-blue-600 active:bg-blue-700 md:hover:bg-blue-500 text-white font-bold py-3 md:py-4 rounded-lg transition-colors shadow-lg shadow-blue-900/40 text-xs md:text-base uppercase tracking-wide truncate">💾 Pausar / Guardar</button>
+                 <button onClick={finalizarPartido} className="flex-[1.5] bg-green-600 active:bg-green-700 md:hover:bg-green-500 text-white font-black py-3 md:py-4 rounded-lg transition-colors shadow-lg shadow-green-900/40 text-xs md:text-lg uppercase tracking-wide truncate">🏁 Finalizar</button>
+                </>
               )}
             </div>
           </div>
@@ -714,34 +756,7 @@ export default function TorneoExpressPage() {
         .pb-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0.75rem); }
       `}} />
 
-      {/* Modal CRUD Jugadores igual */}
-      {modalJugador && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 animate-fade-in backdrop-blur-sm">
-           <div className="bg-neutral-800 p-6 rounded-lg w-full max-w-lg border border-purple-900/50 shadow-2xl flex flex-col max-h-[90vh]">
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">Administrar Planteles</h2>
-            <select value={equipoSeleccionadoId} onChange={e => setEquipoSeleccionadoId(e.target.value)} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-purple-900 focus:border-purple-500 outline-none mb-4 text-sm md:text-base"><option value="">-- Elige un equipo --</option>{equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre} ({eq.grupo})</option>)}</select>
-            {equipoSeleccionadoId && (
-              <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1">
-                <div className="bg-neutral-900/50 p-3 rounded border border-neutral-700"><div className="flex gap-2"><input type="text" value={nuevoNombreJugador} onChange={e => setNuevoNombreJugador(e.target.value)} placeholder="Nombre del Jugador" className="flex-1 p-2 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none text-sm md:text-base"/><button onClick={agregarJugador} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold text-sm md:text-base">Add</button></div></div>
-                <div>
-                  <ul className="flex flex-col gap-2">
-                    {jugadores.filter(j => j.equipoId === equipoSeleccionadoId).map((jug, idx) => (
-                      <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/80 rounded border border-neutral-700 text-sm md:text-base">
-                        {jugadorEditando === jug.id ? <input type="text" value={nombreEdicion} onChange={(e) => setNombreEdicion(e.target.value)} className="p-1 rounded bg-neutral-800 text-white border border-purple-500 outline-none w-full mr-2 text-sm" autoFocus /> : <span className="text-white font-medium truncate pr-2"><span className="text-gray-500 mr-1 md:mr-2">{idx + 1}.</span>{jug.nombre}</span>}
-                        <div className="flex gap-1 md:gap-2 shrink-0">
-                          {jugadorEditando === jug.id ? <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 bg-neutral-800 px-2 py-1 rounded text-xs font-bold border border-green-900">OK</button> : <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 bg-neutral-800 px-2 py-1 rounded text-xs md:text-sm border border-purple-900">✏️</button>}
-                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 bg-neutral-800 px-2 py-1 rounded text-xs md:text-sm border border-red-900">🗑️</button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            <button onClick={() => {setModalJugador(false); setEquipoSeleccionadoId('');}} className="w-full bg-neutral-700 active:bg-neutral-600 text-white py-3 rounded mt-4 text-sm md:text-base font-bold">Cerrar</button>
-          </div>
-        </div>
-      )}
+      {/* Modal CRUD Jugadores Oculto */}
     </main>
   );
 }
