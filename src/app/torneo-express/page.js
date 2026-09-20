@@ -1,18 +1,34 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
+
+// Configuración de Firebase integrada para evitar errores en Vercel
+const firebaseConfig = {
+  apiKey: "AIzaSyCyfuU05U_gEYQiIA15GcAWZM8uRyqXdjY",
+  authDomain: "real-san-fabian.firebaseapp.com",
+  databaseURL: "https://real-san-fabian-default-rtdb.firebaseio.com",
+  projectId: "real-san-fabian",
+  storageBucket: "real-san-fabian.firebasestorage.app",
+  messagingSenderId: "29980827155",
+  appId: "1:29980827155:web:d60492d5f0c63aa47de9e6"
+};
+
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getFirestore(app);
 
 export default function TorneoExpressPage() {
   const [tabActiva, setTabActiva] = useState('posiciones');
 
-  // --- ESTADOS INICIALES LIMPIOS ---
+  // --- ESTADOS DE LA BASE DE DATOS ---
   const [equipos, setEquipos] = useState([]);
   const [jugadores, setJugadores] = useState([]);
   const [partidos, setPartidos] = useState([]);
+  const [cargando, setCargando] = useState(true);
 
   // --- ESTADOS PARA LOS MODALES ---
   const [modalEquipo, setModalEquipo] = useState(false);
   const [modalJugador, setModalJugador] = useState(false);
-  const [modalEditarEquipo, setModalEditarEquipo] = useState(false);
 
   // Formularios
   const [formEquipo, setFormEquipo] = useState({ nombre: '', encargado: '', grupo: '' });
@@ -22,48 +38,97 @@ export default function TorneoExpressPage() {
   const [jugadorEditando, setJugadorEditando] = useState(null);
   const [nombreEdicion, setNombreEdicion] = useState('');
 
-  // --- FUNCIONES DE EQUIPOS ---
-  const registrarEquipo = () => {
+  // --- 1. CARGAR DATOS DESDE FIREBASE ---
+  const cargarDatos = async () => {
+    try {
+      const eqSnap = await getDocs(collection(db, 'torneo_equipos'));
+      setEquipos(eqSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const jugSnap = await getDocs(collection(db, 'torneo_jugadores'));
+      setJugadores(jugSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const parSnap = await getDocs(collection(db, 'torneo_partidos'));
+      setPartidos(parSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      setCargando(false);
+    } catch (error) {
+      console.error("Error al cargar datos:", error);
+      setCargando(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  // --- 2. FUNCIONES DE EQUIPOS ---
+  const registrarEquipo = async () => {
     if (!formEquipo.nombre || !formEquipo.grupo || !formEquipo.encargado) {
       alert("Completa todos los campos del equipo");
       return;
     }
-    const nuevoEquipo = {
-      id: Date.now(),
-      ...formEquipo,
-      pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0
-    };
-    setEquipos([...equipos, nuevoEquipo]);
-    setFormEquipo({ nombre: '', encargado: '', grupo: '' });
-    setModalEquipo(false);
-  };
-
-  const eliminarEquipo = (idEquipo) => {
-    if(window.confirm("🚨 ¿ESTÁS SEGURO? Eliminar este equipo borrará toda su estadística y a todos sus jugadores inscritos. Esta acción NO se puede deshacer.")) {
-      // 1. Borrar equipo
-      setEquipos(equipos.filter(eq => eq.id !== idEquipo));
-      // 2. Borrar jugadores de ese equipo
-      setJugadores(jugadores.filter(j => j.equipoId !== idEquipo));
+    const nuevoEquipo = { ...formEquipo, pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0 };
+    
+    try {
+      const docRef = await addDoc(collection(db, 'torneo_equipos'), nuevoEquipo);
+      setEquipos([...equipos, { id: docRef.id, ...nuevoEquipo }]);
+      setFormEquipo({ nombre: '', encargado: '', grupo: '' });
+      setModalEquipo(false);
+    } catch (error) {
+      console.error("Error al guardar equipo:", error);
+      alert("Error al guardar el equipo en la nube.");
     }
   };
 
-  // --- FUNCIONES DE JUGADORES (CRUD) ---
-  const agregarJugador = () => {
+  const eliminarEquipo = async (idEquipo) => {
+    if(window.confirm("🚨 ¿ESTÁS SEGURO? Eliminar este equipo borrará toda su estadística y a todos sus jugadores inscritos. Esta acción NO se puede deshacer.")) {
+      try {
+        // Eliminar de Firebase
+        await deleteDoc(doc(db, 'torneo_equipos', idEquipo));
+        
+        // Buscar y eliminar jugadores asociados en Firebase
+        const q = query(collection(db, 'torneo_jugadores'), where('equipoId', '==', idEquipo));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(async (docSnap) => {
+           await deleteDoc(doc(db, 'torneo_jugadores', docSnap.id));
+        });
+
+        // Actualizar UI
+        setEquipos(equipos.filter(eq => eq.id !== idEquipo));
+        setJugadores(jugadores.filter(j => j.equipoId !== idEquipo));
+      } catch (error) {
+        console.error("Error al eliminar equipo:", error);
+      }
+    }
+  };
+
+  // --- 3. FUNCIONES DE JUGADORES (CRUD) ---
+  const agregarJugador = async () => {
     if (!nuevoNombreJugador.trim() || !equipoSeleccionadoId) return;
     
     const nuevoJugador = {
-      id: Date.now(),
       nombre: nuevoNombreJugador,
-      equipoId: Number(equipoSeleccionadoId),
+      equipoId: equipoSeleccionadoId,
       goles: 0, amarillas: 0, rojas: 0
     };
-    setJugadores([...jugadores, nuevoJugador]);
-    setNuevoNombreJugador('');
+
+    try {
+      const docRef = await addDoc(collection(db, 'torneo_jugadores'), nuevoJugador);
+      setJugadores([...jugadores, { id: docRef.id, ...nuevoJugador }]);
+      setNuevoNombreJugador('');
+    } catch (error) {
+      console.error("Error al guardar jugador:", error);
+    }
   };
 
-  const eliminarJugador = (id) => {
+  const eliminarJugador = async (id) => {
     if(window.confirm("¿Eliminar este jugador del plantel?")) {
-      setJugadores(jugadores.filter(j => j.id !== id));
+      try {
+        await deleteDoc(doc(db, 'torneo_jugadores', id));
+        setJugadores(jugadores.filter(j => j.id !== id));
+      } catch (error) {
+        console.error("Error al eliminar jugador:", error);
+      }
     }
   };
 
@@ -72,9 +137,14 @@ export default function TorneoExpressPage() {
     setNombreEdicion(jugador.nombre);
   };
 
-  const guardarEdicionJugador = (id) => {
-    setJugadores(jugadores.map(j => j.id === id ? { ...j, nombre: nombreEdicion } : j));
-    setJugadorEditando(null);
+  const guardarEdicionJugador = async (id) => {
+    try {
+      await updateDoc(doc(db, 'torneo_jugadores', id), { nombre: nombreEdicion });
+      setJugadores(jugadores.map(j => j.id === id ? { ...j, nombre: nombreEdicion } : j));
+      setJugadorEditando(null);
+    } catch (error) {
+      console.error("Error al editar jugador:", error);
+    }
   };
 
   // --- COMPONENTES VISUALES INTERNOS ---
@@ -82,7 +152,7 @@ export default function TorneoExpressPage() {
     const equiposFiltrados = equipos.filter(eq => eq.grupo === grupoFiltro).sort((a, b) => b.pf - a.pf || b.dg - a.dg);
 
     return (
-      <div className="mb-8 bg-neutral-800 p-4 rounded-lg border border-purple-900/50 relative">
+      <div className="mb-8 bg-neutral-800 p-4 rounded-lg border border-purple-900/50 relative shadow-lg">
         <h3 className="text-xl font-bold text-white mb-4 border-b border-neutral-700 pb-2 flex justify-between items-center">
           {titulo}
         </h3>
@@ -105,35 +175,38 @@ export default function TorneoExpressPage() {
               </tr>
             </thead>
             <tbody>
-              {equiposFiltrados.length === 0 && (
+              {cargando ? (
+                <tr><td colSpan="11" className="p-6 text-purple-400 animate-pulse text-center">Cargando datos desde Firebase...</td></tr>
+              ) : equiposFiltrados.length === 0 ? (
                 <tr><td colSpan="11" className="p-6 text-gray-500 italic text-center">No hay equipos inscritos en este grupo aún.</td></tr>
+              ) : (
+                equiposFiltrados.map((eq, i) => (
+                  <tr key={eq.id} className="border-b border-neutral-700/50 hover:bg-neutral-700/30 group">
+                    <td className="p-2 text-left font-medium text-white">
+                      {i + 1}. {eq.nombre}
+                      <span className="block text-[10px] text-gray-500 font-normal">DT: {eq.encargado}</span>
+                    </td>
+                    <td className="p-2">{eq.pj}</td>
+                    <td className="p-2 text-amber-500 font-medium">{eq.fa}</td>
+                    <td className="p-2 text-green-400">{eq.pg}</td>
+                    <td className="p-2 text-gray-400">{eq.pe}</td>
+                    <td className="p-2 text-red-400">{eq.pp}</td>
+                    <td className="p-2">{eq.gf}</td>
+                    <td className="p-2">{eq.gc}</td>
+                    <td className="p-2">{eq.dg}</td>
+                    <td className="p-2 font-bold text-white bg-purple-900/20">{eq.pf}</td>
+                    <td className="p-2">
+                       <button 
+                         onClick={() => eliminarEquipo(eq.id)} 
+                         className="text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                         title="Eliminar Equipo"
+                       >
+                         🗑️
+                       </button>
+                    </td>
+                  </tr>
+                ))
               )}
-              {equiposFiltrados.map((eq, i) => (
-                <tr key={eq.id} className="border-b border-neutral-700/50 hover:bg-neutral-700/30 group">
-                  <td className="p-2 text-left font-medium text-white">
-                    {i + 1}. {eq.nombre}
-                    <span className="block text-[10px] text-gray-500 font-normal">DT: {eq.encargado}</span>
-                  </td>
-                  <td className="p-2">{eq.pj}</td>
-                  <td className="p-2 text-amber-500 font-medium">{eq.fa}</td>
-                  <td className="p-2 text-green-400">{eq.pg}</td>
-                  <td className="p-2 text-gray-400">{eq.pe}</td>
-                  <td className="p-2 text-red-400">{eq.pp}</td>
-                  <td className="p-2">{eq.gf}</td>
-                  <td className="p-2">{eq.gc}</td>
-                  <td className="p-2">{eq.dg}</td>
-                  <td className="p-2 font-bold text-white bg-purple-900/20">{eq.pf}</td>
-                  <td className="p-2">
-                     <button 
-                       onClick={() => eliminarEquipo(eq.id)} 
-                       className="text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                       title="Eliminar Equipo"
-                     >
-                       🗑️
-                     </button>
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
@@ -161,52 +234,57 @@ export default function TorneoExpressPage() {
 
       {tabActiva === 'partidos' && (
         <div className="w-full max-w-5xl mx-auto animate-fade-in flex flex-col gap-6 items-center text-center mt-10">
-          {partidos.length === 0 ? (
-             <div className="text-gray-500 bg-neutral-800/50 p-10 rounded-lg border border-neutral-700 w-full">
+          {cargando ? (
+            <p className="text-purple-400 animate-pulse">Cargando partidos...</p>
+          ) : partidos.length === 0 ? (
+             <div className="text-gray-500 bg-neutral-800/50 p-10 rounded-lg border border-neutral-700 w-full shadow-lg">
                <span className="text-4xl mb-4 block">⚽</span>
                <p className="text-xl mb-2">No hay partidos en curso.</p>
                <p className="text-sm">Inscribe equipos primero y luego inicia los encuentros.</p>
              </div>
           ) : (
             partidos.map(partido => (
-              <div key={partido.id}> {/* Espacio reservado para lógica de partidos futuros */} </div>
+              <div key={partido.id}> {/* Lógica de marcadores futuros */} </div>
             ))
           )}
-          <button className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded shadow-lg shadow-green-900/20">+ Iniciar Nuevo Partido</button>
+          <button className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded shadow-lg shadow-green-900/20 transition-colors">+ Iniciar Nuevo Partido</button>
         </div>
       )}
 
       {tabActiva === 'estadisticas' && (
         <div className="w-full max-w-5xl mx-auto animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-8">
           
-          <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700">
+          <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700 shadow-lg">
             <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">⚽ Tabla de Goleadores</h3>
             <ul className="flex flex-col gap-2">
-              {jugadores.filter(j => j.goles > 0).length === 0 && (
+              {cargando ? (
+                <li className="text-purple-400 animate-pulse p-2">Cargando goleadores...</li>
+              ) : jugadores.filter(j => j.goles > 0).length === 0 ? (
                 <li className="text-gray-500 text-sm italic p-4 text-center bg-neutral-900/30 rounded">Aún no hay goles registrados en el torneo.</li>
+              ) : (
+                jugadores.filter(j => j.goles > 0).sort((a,b) => b.goles - a.goles).map((jug, index) => (
+                  <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/50 rounded border border-neutral-800 hover:bg-neutral-800 transition-colors">
+                    <div className="flex gap-3">
+                      <span className="text-gray-500 font-bold w-4">{index + 1}.</span>
+                      <span className="text-white font-medium">{jug.nombre}</span>
+                    </div>
+                    <span className="text-purple-400 font-bold">{jug.goles} Goles</span>
+                  </li>
+                ))
               )}
-              {jugadores.filter(j => j.goles > 0).sort((a,b) => b.goles - a.goles).map((jug, index) => (
-                <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/50 rounded border border-neutral-800">
-                  <div className="flex gap-3">
-                    <span className="text-gray-500 font-bold w-4">{index + 1}.</span>
-                    <span className="text-white font-medium">{jug.nombre}</span>
-                  </div>
-                  <span className="text-purple-400 font-bold">{jug.goles} Goles</span>
-                </li>
-              ))}
             </ul>
           </div>
 
-          <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700">
+          <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700 shadow-lg">
              <h3 className="text-xl font-bold text-white mb-4">Administrar Torneo</h3>
              <div className="flex flex-col gap-3">
                <button onClick={() => setModalEquipo(true)} className="w-full bg-purple-900/40 hover:bg-purple-600 text-purple-200 hover:text-white p-3 rounded font-medium text-left border border-purple-700 flex justify-between transition-colors shadow-lg">
                  ➕ Inscribir Equipo Nuevo <span className="text-purple-400 hover:text-white">→</span>
                </button>
-               <button onClick={() => setModalJugador(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors">
+               <button onClick={() => setModalJugador(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors shadow-lg">
                  👤 Administrar Planteles <span className="text-gray-400">→</span>
                </button>
-               <p className="text-xs text-gray-500 mt-4 text-center">Para borrar un equipo completo, ve a "Tablas de Posiciones" y usa el ícono de papelera.</p>
+               <p className="text-xs text-gray-500 mt-4 text-center bg-neutral-900/50 p-3 rounded">Para borrar un equipo completo, ve a "Tablas de Posiciones" y usa el ícono de papelera al final de la fila.</p>
              </div>
           </div>
         </div>
@@ -216,21 +294,21 @@ export default function TorneoExpressPage() {
       {/* MODAL 1: INSCRIBIR EQUIPO NUEVO           */}
       {/* ========================================= */}
       {modalEquipo && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in backdrop-blur-sm">
           <div className="bg-neutral-800 p-6 rounded-lg w-full max-w-md border border-purple-900/50 shadow-2xl">
             <h2 className="text-2xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">Inscribir Equipo</h2>
             <div className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Nombre del Equipo</label>
-                <input type="text" value={formEquipo.nombre} onChange={e => setFormEquipo({...formEquipo, nombre: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none" placeholder="Ej. Los Titanes"/>
+                <input type="text" value={formEquipo.nombre} onChange={e => setFormEquipo({...formEquipo, nombre: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none transition-colors" placeholder="Ej. Los Titanes"/>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Nombre del Encargado / DT</label>
-                <input type="text" value={formEquipo.encargado} onChange={e => setFormEquipo({...formEquipo, encargado: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none" placeholder="Ej. Juan Pérez"/>
+                <input type="text" value={formEquipo.encargado} onChange={e => setFormEquipo({...formEquipo, encargado: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none transition-colors" placeholder="Ej. Juan Pérez"/>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Categoría / Grupo</label>
-                <select value={formEquipo.grupo} onChange={e => setFormEquipo({...formEquipo, grupo: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none">
+                <select value={formEquipo.grupo} onChange={e => setFormEquipo({...formEquipo, grupo: e.target.value})} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none transition-colors">
                   <option value="">Seleccionar Grupo...</option>
                   <option value="Grupo A Varones">Grupo A Varones</option>
                   <option value="Grupo B Varones">Grupo B Varones</option>
@@ -250,7 +328,7 @@ export default function TorneoExpressPage() {
       {/* MODAL 2: ADMINISTRAR JUGADORES (CRUD)     */}
       {/* ========================================= */}
       {modalJugador && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in backdrop-blur-sm">
           <div className="bg-neutral-800 p-6 rounded-lg w-full max-w-lg border border-purple-900/50 shadow-2xl flex flex-col max-h-[90vh]">
             <h2 className="text-2xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">Administrar Planteles</h2>
             
@@ -258,7 +336,7 @@ export default function TorneoExpressPage() {
             <select 
               value={equipoSeleccionadoId} 
               onChange={e => setEquipoSeleccionadoId(e.target.value)} 
-              className="w-full p-2.5 rounded bg-neutral-900 text-white border border-purple-900 focus:border-purple-500 outline-none mb-4"
+              className="w-full p-2.5 rounded bg-neutral-900 text-white border border-purple-900 focus:border-purple-500 outline-none mb-4 transition-colors"
             >
               <option value="">-- Elige un equipo --</option>
               {equipos.map(eq => (
@@ -267,8 +345,8 @@ export default function TorneoExpressPage() {
             </select>
 
             {equipoSeleccionadoId && (
-              <div className="flex-1 overflow-y-auto flex flex-col gap-4">
-                <div className="bg-neutral-900/50 p-3 rounded border border-neutral-700">
+              <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1">
+                <div className="bg-neutral-900/50 p-3 rounded border border-neutral-700 shadow-inner">
                   <label className="block text-sm text-gray-400 mb-1">2. Inscribir nuevo jugador:</label>
                   <div className="flex gap-2">
                     <input 
@@ -277,21 +355,21 @@ export default function TorneoExpressPage() {
                       onChange={e => setNuevoNombreJugador(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && agregarJugador()}
                       placeholder="Nombre del jugador" 
-                      className="flex-1 p-2 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none"
+                      className="flex-1 p-2 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none transition-colors"
                     />
-                    <button onClick={agregarJugador} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold transition-colors">Agregar</button>
+                    <button onClick={agregarJugador} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold transition-colors shadow-lg">Agregar</button>
                   </div>
                 </div>
 
                 <div>
                   <h4 className="text-gray-300 font-bold mb-2">3. Nómina Actual:</h4>
                   <ul className="flex flex-col gap-2">
-                    {jugadores.filter(j => j.equipoId === Number(equipoSeleccionadoId)).length === 0 && (
-                      <li className="text-gray-500 text-sm italic p-4 text-center bg-neutral-900/30 rounded">Plantel vacío. Inscribe jugadores arriba.</li>
+                    {jugadores.filter(j => j.equipoId === equipoSeleccionadoId).length === 0 && (
+                      <li className="text-gray-500 text-sm italic p-4 text-center bg-neutral-900/30 rounded border border-dashed border-neutral-700">Plantel vacío. Inscribe jugadores arriba.</li>
                     )}
                     
-                    {jugadores.filter(j => j.equipoId === Number(equipoSeleccionadoId)).map((jug, idx) => (
-                      <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/80 rounded border border-neutral-700">
+                    {jugadores.filter(j => j.equipoId === equipoSeleccionadoId).map((jug, idx) => (
+                      <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/80 rounded border border-neutral-700 hover:border-neutral-600 transition-colors">
                         {jugadorEditando === jug.id ? (
                           <input 
                             type="text" 
@@ -306,11 +384,11 @@ export default function TorneoExpressPage() {
 
                         <div className="flex gap-2 shrink-0">
                           {jugadorEditando === jug.id ? (
-                            <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 hover:text-green-300 bg-neutral-800 px-2 py-1 rounded text-xs font-bold border border-green-900">Guardar</button>
+                            <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 hover:text-green-300 bg-neutral-800 px-2 py-1 rounded text-xs font-bold border border-green-900 transition-colors">Guardar</button>
                           ) : (
-                            <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 hover:text-purple-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-purple-900">✏️</button>
+                            <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 hover:text-purple-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-purple-900 transition-colors">✏️</button>
                           )}
-                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 hover:text-red-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-red-900">🗑️</button>
+                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 hover:text-red-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-red-900 transition-colors">🗑️</button>
                         </div>
                       </li>
                     ))}
@@ -319,7 +397,7 @@ export default function TorneoExpressPage() {
               </div>
             )}
 
-            <button onClick={() => {setModalJugador(false); setEquipoSeleccionadoId('');}} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white py-3 rounded font-medium transition-colors mt-4">Cerrar Administrador</button>
+            <button onClick={() => {setModalJugador(false); setEquipoSeleccionadoId('');}} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white py-3 rounded font-medium transition-colors mt-4 shadow-lg">Cerrar Administrador</button>
           </div>
         </div>
       )}
