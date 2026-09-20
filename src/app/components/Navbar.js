@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import Image from 'next/image'; // Importamos el optimizador de imágenes de Next.js
+import Image from 'next/image';
 
 export default function Navbar() {
   return (
@@ -21,7 +21,7 @@ export default function Navbar() {
         </Link>
         
         {/* Enlaces de los módulos */}
-        <div className="flex gap-6 font-medium">
+        <div className="flex gap-4 md:gap-6 font-medium text-sm md:text-base flex-wrap justify-center items-center">
           <Link href="/jugadores" className="text-gray-300 hover:text-purple-400 transition-colors">
             Jugadores
           </Link>
@@ -32,7 +32,12 @@ export default function Navbar() {
             Estadísticas
           </Link>
           <Link href="/torneos" className="text-gray-300 hover:text-purple-400 transition-colors">
-            Torneos
+            Inscripción
+          </Link>
+          
+          {/* Nuevo enlace destacado para el Torneo Express */}
+          <Link href="/torneo-express" className="bg-purple-900/40 border border-purple-700 text-purple-300 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded transition-all font-bold flex items-center gap-1 shadow-[0_0_10px_rgba(168,85,247,0.2)]">
+            ⚡ Torneo en Vivo
           </Link>
         </div>
       </div>
