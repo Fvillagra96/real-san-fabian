@@ -184,19 +184,20 @@ export default function TorneoExpressPage() {
     
     const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partido.local));
     const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partido.visita));
-    const statsIniciales = {};
+    const statsActualizadas = {};
     
+    // Aseguramos que TODOS los jugadores actuales tengan su registro inicializado
     jugadores.forEach(j => {
       if ((eqLoc && j.equipoId === eqLoc.id) || (eqVis && j.equipoId === eqVis.id)) {
-        statsIniciales[j.id] = { goles: 0, amarillas: 0, rojas: 0, arquero: false };
+        if (partido.registroJugadores && partido.registroJugadores[j.id]) {
+            statsActualizadas[j.id] = partido.registroJugadores[j.id];
+        } else {
+            statsActualizadas[j.id] = { goles: 0, amarillas: 0, rojas: 0, arquero: false };
+        }
       }
     });
 
-    if (partido.registroJugadores) {
-       setStatsPartido(partido.registroJugadores);
-    } else {
-       setStatsPartido(statsIniciales);
-    }
+    setStatsPartido(statsActualizadas);
     
     if (partido.estado === 'Finalizado') {
        setStatsOriginalesReversion({
@@ -224,8 +225,8 @@ export default function TorneoExpressPage() {
     }
 
     setStatsPartido(prev => {
-      const actual = prev[jugadorId];
-      let nuevoValor = actual[tipo];
+      const actual = prev[jugadorId] || { goles: 0, amarillas: 0, rojas: 0, arquero: false };
+      let nuevoValor = actual[tipo] || 0;
       
       if (tipo === 'arquero') nuevoValor = !actual.arquero;
       else if (operacion === 'sumar') nuevoValor++;
@@ -242,8 +243,8 @@ export default function TorneoExpressPage() {
 
     Object.keys(statsPartido).forEach(jId => {
       const jugador = jugadores.find(j => j.id === jId);
-      if (jugador && eqLoc && jugador.equipoId === eqLoc.id) golesLoc += statsPartido[jId].goles;
-      else if (jugador && eqVis && jugador.equipoId === eqVis.id) golesVis += statsPartido[jId].goles;
+      if (jugador && eqLoc && jugador.equipoId === eqLoc.id) golesLoc += (statsPartido[jId]?.goles || 0);
+      else if (jugador && eqVis && jugador.equipoId === eqVis.id) golesVis += (statsPartido[jId]?.goles || 0);
     });
 
     try {
@@ -275,7 +276,7 @@ export default function TorneoExpressPage() {
     let arqueroLocId = null; let arqueroVisId = null;
 
     Object.keys(statsPartido).forEach(jId => {
-      const jStats = statsPartido[jId];
+      const jStats = statsPartido[jId] || { goles: 0, amarillas: 0, rojas: 0, arquero: false };
       const jugador = jugadores.find(j => j.id === jId);
       if (jugador) {
         if (jugador.equipoId === eqLoc.id) {
@@ -292,7 +293,7 @@ export default function TorneoExpressPage() {
 
     try {
       const updatesJugadores = Object.keys(statsPartido).map(async (jId) => {
-        const jStats = statsPartido[jId];
+        const jStats = statsPartido[jId] || { goles: 0, amarillas: 0, rojas: 0, arquero: false };
         const jugadorGlobal = jugadores.find(j => j.id === jId);
         if (!jugadorGlobal) return;
 
@@ -382,7 +383,7 @@ export default function TorneoExpressPage() {
 
         const regJugadores = statsOriginalesReversion.registroJugadores || {};
         const updatesJugadores = Object.keys(regJugadores).map(async (jId) => {
-            const statsViejas = regJugadores[jId];
+            const statsViejas = regJugadores[jId] || { goles: 0, amarillas: 0, rojas: 0, arquero: false };
             const jugadorGlobal = jugadores.find(j => j.id === jId);
             if (!jugadorGlobal) return;
 
@@ -466,6 +467,8 @@ export default function TorneoExpressPage() {
     const eventos = [];
     Object.keys(statsPartido).forEach(jId => {
       const jStats = statsPartido[jId];
+      if (!jStats) return; 
+
       const jug = jugadores.find(j => j.id === jId);
       if (jug && jug.equipoId === eq.id) {
         if (jStats.goles > 0) eventos.push({ id: `g-${jId}`, text: `⚽ ${jug.nombre} ${jStats.goles > 1 ? '('+jStats.goles+')' : ''}` });
@@ -726,13 +729,13 @@ export default function TorneoExpressPage() {
                    {partidoActivo.estado === 'Finalizado' ? partidoActivo.golesLocal : Object.values(statsPartido).reduce((sum, st) => {
                      const j = jugadores.find(ju => ju.id === Object.keys(statsPartido).find(key => statsPartido[key] === st));
                      const eqLoc = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.local));
-                     return (j && eqLoc && j.equipoId === eqLoc.id) ? sum + st.goles : sum;
+                     return (j && eqLoc && j.equipoId === eqLoc.id) ? sum + (st?.goles || 0) : sum;
                    }, 0)}
                    <span className="mx-2 text-neutral-600">-</span>
                    {partidoActivo.estado === 'Finalizado' ? partidoActivo.golesVisita : Object.values(statsPartido).reduce((sum, st) => {
                      const j = jugadores.find(ju => ju.id === Object.keys(statsPartido).find(key => statsPartido[key] === st));
                      const eqVis = equipos.find(e => normalizar(e.nombre) === normalizar(partidoActivo.visita));
-                     return (j && eqVis && j.equipoId === eqVis.id) ? sum + st.goles : sum;
+                     return (j && eqVis && j.equipoId === eqVis.id) ? sum + (st?.goles || 0) : sum;
                    }, 0)}
                  </span>
                </div>
