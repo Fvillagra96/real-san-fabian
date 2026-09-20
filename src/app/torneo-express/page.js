@@ -4,35 +4,22 @@ import { useState } from 'react';
 export default function TorneoExpressPage() {
   const [tabActiva, setTabActiva] = useState('posiciones');
 
-  // --- ESTADOS DE LA BASE DE DATOS LOCAL ---
-  const [equipos, setEquipos] = useState([
-    { id: 1, nombre: "Equipo 1", grupo: "Grupo A Varones", encargado: "Juan Pérez", pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0 },
-    { id: 2, nombre: "Equipo 2", grupo: "Grupo A Varones", encargado: "Diego Gómez", pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0 },
-    { id: 3, nombre: "Equipo A", grupo: "Grupo B Varones", encargado: "Carlos Tapia", pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0 },
-    { id: 4, nombre: "Equipo 1 Damas", grupo: "Damas", encargado: "Ana Silva", pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0 },
-  ]);
+  // --- ESTADOS INICIALES LIMPIOS ---
+  const [equipos, setEquipos] = useState([]);
+  const [jugadores, setJugadores] = useState([]);
+  const [partidos, setPartidos] = useState([]);
 
-  const [jugadores, setJugadores] = useState([
-    { id: 1, nombre: "Carlos", equipoId: 1, goles: 3, amarillas: 1, rojas: 0 },
-    { id: 2, nombre: "Felipe", equipoId: 2, goles: 1, amarillas: 0, rojas: 0 },
-    { id: 3, nombre: "María", equipoId: 4, goles: 4, amarillas: 0, rojas: 0 },
-  ]);
-
-  const [partidos, setPartidos] = useState([
-    { id: 1, local: "Equipo 1", visita: "Equipo 2", golesLocal: 2, golesVisita: 1, faltasLocal: 3, faltasVisita: 2, estado: "En Curso", grupo: "Grupo A Varones" }
-  ]);
-
-  // --- ESTADOS PARA LOS MODALES (VENTANAS EMERGENTES) ---
+  // --- ESTADOS PARA LOS MODALES ---
   const [modalEquipo, setModalEquipo] = useState(false);
   const [modalJugador, setModalJugador] = useState(false);
+  const [modalEditarEquipo, setModalEditarEquipo] = useState(false);
 
-  // Formulario Nuevo Equipo
+  // Formularios
   const [formEquipo, setFormEquipo] = useState({ nombre: '', encargado: '', grupo: '' });
   
-  // Formulario Administrar Plantel
   const [equipoSeleccionadoId, setEquipoSeleccionadoId] = useState('');
   const [nuevoNombreJugador, setNuevoNombreJugador] = useState('');
-  const [jugadorEditando, setJugadorEditando] = useState(null); // Guarda el ID del jugador que se está editando
+  const [jugadorEditando, setJugadorEditando] = useState(null);
   const [nombreEdicion, setNombreEdicion] = useState('');
 
   // --- FUNCIONES DE EQUIPOS ---
@@ -47,8 +34,17 @@ export default function TorneoExpressPage() {
       pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0
     };
     setEquipos([...equipos, nuevoEquipo]);
-    setFormEquipo({ nombre: '', encargado: '', grupo: '' }); // Limpiar
-    setModalEquipo(false); // Cerrar modal
+    setFormEquipo({ nombre: '', encargado: '', grupo: '' });
+    setModalEquipo(false);
+  };
+
+  const eliminarEquipo = (idEquipo) => {
+    if(window.confirm("🚨 ¿ESTÁS SEGURO? Eliminar este equipo borrará toda su estadística y a todos sus jugadores inscritos. Esta acción NO se puede deshacer.")) {
+      // 1. Borrar equipo
+      setEquipos(equipos.filter(eq => eq.id !== idEquipo));
+      // 2. Borrar jugadores de ese equipo
+      setJugadores(jugadores.filter(j => j.equipoId !== idEquipo));
+    }
   };
 
   // --- FUNCIONES DE JUGADORES (CRUD) ---
@@ -86,8 +82,11 @@ export default function TorneoExpressPage() {
     const equiposFiltrados = equipos.filter(eq => eq.grupo === grupoFiltro).sort((a, b) => b.pf - a.pf || b.dg - a.dg);
 
     return (
-      <div className="mb-8 bg-neutral-800 p-4 rounded-lg border border-purple-900/50">
-        <h3 className="text-xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">{titulo}</h3>
+      <div className="mb-8 bg-neutral-800 p-4 rounded-lg border border-purple-900/50 relative">
+        <h3 className="text-xl font-bold text-white mb-4 border-b border-neutral-700 pb-2 flex justify-between items-center">
+          {titulo}
+        </h3>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-center text-sm text-gray-300 min-w-max">
             <thead className="bg-neutral-900/50 text-purple-400">
@@ -102,14 +101,15 @@ export default function TorneoExpressPage() {
                 <th className="p-2" title="Goles en Contra">GC</th>
                 <th className="p-2" title="Diferencia de Goles">DG</th>
                 <th className="p-2 text-white font-bold" title="Puntaje Final">PF</th>
+                <th className="p-2 text-gray-500">Acción</th>
               </tr>
             </thead>
             <tbody>
               {equiposFiltrados.length === 0 && (
-                <tr><td colSpan="10" className="p-4 text-gray-500">Aún no hay equipos inscritos en este grupo.</td></tr>
+                <tr><td colSpan="11" className="p-6 text-gray-500 italic text-center">No hay equipos inscritos en este grupo aún.</td></tr>
               )}
               {equiposFiltrados.map((eq, i) => (
-                <tr key={eq.id} className="border-b border-neutral-700/50 hover:bg-neutral-700/30">
+                <tr key={eq.id} className="border-b border-neutral-700/50 hover:bg-neutral-700/30 group">
                   <td className="p-2 text-left font-medium text-white">
                     {i + 1}. {eq.nombre}
                     <span className="block text-[10px] text-gray-500 font-normal">DT: {eq.encargado}</span>
@@ -123,6 +123,15 @@ export default function TorneoExpressPage() {
                   <td className="p-2">{eq.gc}</td>
                   <td className="p-2">{eq.dg}</td>
                   <td className="p-2 font-bold text-white bg-purple-900/20">{eq.pf}</td>
+                  <td className="p-2">
+                     <button 
+                       onClick={() => eliminarEquipo(eq.id)} 
+                       className="text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                       title="Eliminar Equipo"
+                     >
+                       🗑️
+                     </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -139,7 +148,7 @@ export default function TorneoExpressPage() {
       <div className="flex flex-wrap gap-2 mb-6 border-b border-neutral-700 pb-2 justify-center">
         <button onClick={() => setTabActiva('posiciones')} className={`px-4 py-2 font-semibold rounded-t-lg transition-colors ${tabActiva === 'posiciones' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Tablas de Posiciones</button>
         <button onClick={() => setTabActiva('partidos')} className={`px-4 py-2 font-semibold rounded-t-lg transition-colors ${tabActiva === 'partidos' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Marcador en Vivo</button>
-        <button onClick={() => setTabActiva('estadisticas')} className={`px-4 py-2 font-semibold rounded-t-lg transition-colors ${tabActiva === 'estadisticas' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Estadísticas y Jugadores</button>
+        <button onClick={() => setTabActiva('estadisticas')} className={`px-4 py-2 font-semibold rounded-t-lg transition-colors ${tabActiva === 'estadisticas' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Estadísticas y Administrar</button>
       </div>
 
       {tabActiva === 'posiciones' && (
@@ -151,40 +160,19 @@ export default function TorneoExpressPage() {
       )}
 
       {tabActiva === 'partidos' && (
-        <div className="w-full max-w-5xl mx-auto animate-fade-in flex flex-col gap-6">
-          <button className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded w-fit">+ Nuevo Partido</button>
-          
-          {partidos.map(partido => (
-            <div key={partido.id} className="bg-neutral-800 p-6 rounded-lg border border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.15)] flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex flex-col items-center flex-1">
-                <span className="text-xl font-bold text-white mb-2">{partido.local}</span>
-                <div className="flex gap-2 mb-2">
-                  <button className="bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1 rounded text-xl">-</button>
-                  <span className="text-4xl font-black text-white w-12 text-center">{partido.golesLocal}</span>
-                  <button className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded text-xl">+</button>
-                </div>
-                <span className="text-sm text-amber-500 font-medium">Faltas Acum. (FA): {partido.faltasLocal}</span>
-              </div>
-
-              <div className="flex flex-col items-center justify-center gap-2">
-                <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-xs font-bold border border-red-500/50 uppercase tracking-widest animate-pulse">
-                  {partido.estado}
-                </span>
-                <span className="text-gray-500 text-sm">{partido.grupo}</span>
-                <button className="text-purple-400 hover:text-white text-sm underline mt-2">Agregar Tarjetas/Goleadores</button>
-              </div>
-
-              <div className="flex flex-col items-center flex-1">
-                <span className="text-xl font-bold text-white mb-2">{partido.visita}</span>
-                <div className="flex gap-2 mb-2">
-                  <button className="bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1 rounded text-xl">-</button>
-                  <span className="text-4xl font-black text-white w-12 text-center">{partido.golesVisita}</span>
-                  <button className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded text-xl">+</button>
-                </div>
-                <span className="text-sm text-amber-500 font-medium">Faltas Acum. (FA): {partido.faltasVisita}</span>
-              </div>
-            </div>
-          ))}
+        <div className="w-full max-w-5xl mx-auto animate-fade-in flex flex-col gap-6 items-center text-center mt-10">
+          {partidos.length === 0 ? (
+             <div className="text-gray-500 bg-neutral-800/50 p-10 rounded-lg border border-neutral-700 w-full">
+               <span className="text-4xl mb-4 block">⚽</span>
+               <p className="text-xl mb-2">No hay partidos en curso.</p>
+               <p className="text-sm">Inscribe equipos primero y luego inicia los encuentros.</p>
+             </div>
+          ) : (
+            partidos.map(partido => (
+              <div key={partido.id}> {/* Espacio reservado para lógica de partidos futuros */} </div>
+            ))
+          )}
+          <button className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded shadow-lg shadow-green-900/20">+ Iniciar Nuevo Partido</button>
         </div>
       )}
 
@@ -194,6 +182,9 @@ export default function TorneoExpressPage() {
           <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700">
             <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">⚽ Tabla de Goleadores</h3>
             <ul className="flex flex-col gap-2">
+              {jugadores.filter(j => j.goles > 0).length === 0 && (
+                <li className="text-gray-500 text-sm italic p-4 text-center bg-neutral-900/30 rounded">Aún no hay goles registrados en el torneo.</li>
+              )}
               {jugadores.filter(j => j.goles > 0).sort((a,b) => b.goles - a.goles).map((jug, index) => (
                 <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/50 rounded border border-neutral-800">
                   <div className="flex gap-3">
@@ -203,21 +194,19 @@ export default function TorneoExpressPage() {
                   <span className="text-purple-400 font-bold">{jug.goles} Goles</span>
                 </li>
               ))}
-              {jugadores.filter(j => j.goles > 0).length === 0 && (
-                <li className="text-gray-500 text-sm">Aún no hay goles registrados.</li>
-              )}
             </ul>
           </div>
 
           <div className="bg-neutral-800 p-6 rounded-lg border border-neutral-700">
-             <h3 className="text-xl font-bold text-white mb-4">Administrar</h3>
+             <h3 className="text-xl font-bold text-white mb-4">Administrar Torneo</h3>
              <div className="flex flex-col gap-3">
-               <button onClick={() => setModalEquipo(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors">
-                 ➕ Inscribir Equipo Nuevo <span className="text-gray-400">→</span>
+               <button onClick={() => setModalEquipo(true)} className="w-full bg-purple-900/40 hover:bg-purple-600 text-purple-200 hover:text-white p-3 rounded font-medium text-left border border-purple-700 flex justify-between transition-colors shadow-lg">
+                 ➕ Inscribir Equipo Nuevo <span className="text-purple-400 hover:text-white">→</span>
                </button>
                <button onClick={() => setModalJugador(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors">
                  👤 Administrar Planteles <span className="text-gray-400">→</span>
                </button>
+               <p className="text-xs text-gray-500 mt-4 text-center">Para borrar un equipo completo, ve a "Tablas de Posiciones" y usa el ícono de papelera.</p>
              </div>
           </div>
         </div>
@@ -298,13 +287,11 @@ export default function TorneoExpressPage() {
                   <h4 className="text-gray-300 font-bold mb-2">3. Nómina Actual:</h4>
                   <ul className="flex flex-col gap-2">
                     {jugadores.filter(j => j.equipoId === Number(equipoSeleccionadoId)).length === 0 && (
-                      <li className="text-gray-500 text-sm">No hay jugadores inscritos en este equipo.</li>
+                      <li className="text-gray-500 text-sm italic p-4 text-center bg-neutral-900/30 rounded">Plantel vacío. Inscribe jugadores arriba.</li>
                     )}
                     
                     {jugadores.filter(j => j.equipoId === Number(equipoSeleccionadoId)).map((jug, idx) => (
                       <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/80 rounded border border-neutral-700">
-                        
-                        {/* Modo Edición vs Modo Vista */}
                         {jugadorEditando === jug.id ? (
                           <input 
                             type="text" 
@@ -317,14 +304,13 @@ export default function TorneoExpressPage() {
                           <span className="text-white font-medium text-sm"><span className="text-gray-500 mr-2">{idx + 1}.</span>{jug.nombre}</span>
                         )}
 
-                        {/* Botones de Acción */}
                         <div className="flex gap-2 shrink-0">
                           {jugadorEditando === jug.id ? (
-                            <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 hover:text-green-300 bg-neutral-800 px-2 py-1 rounded text-xs font-bold">Guardar</button>
+                            <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 hover:text-green-300 bg-neutral-800 px-2 py-1 rounded text-xs font-bold border border-green-900">Guardar</button>
                           ) : (
-                            <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 hover:text-purple-300 bg-neutral-800 px-2 py-1 rounded text-xs">✏️</button>
+                            <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 hover:text-purple-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-purple-900">✏️</button>
                           )}
-                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 hover:text-red-300 bg-neutral-800 px-2 py-1 rounded text-xs">🗑️</button>
+                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 hover:text-red-300 bg-neutral-800 px-2 py-1 rounded text-xs border border-red-900">🗑️</button>
                         </div>
                       </li>
                     ))}
