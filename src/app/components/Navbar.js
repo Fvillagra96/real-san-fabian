@@ -35,6 +35,9 @@ export default function Navbar() {
           <Link href="/torneos" className="text-gray-300 hover:text-purple-400 transition-colors">
             Inscripción
           </Link>
+          <Link href="/ventas" className="text-gray-300 hover:text-purple-400 transition-colors font-bold">
+              🏪 Kiosco
+          </Link>
           
           <Link href="/torneo-express" className="bg-purple-900/40 border border-purple-700 text-purple-300 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded transition-all font-bold flex items-center gap-1 shadow-[0_0_10px_rgba(168,85,247,0.2)]">
             ⚡ Torneo en Vivo
