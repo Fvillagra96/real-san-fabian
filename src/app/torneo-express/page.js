@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
-import * as XLSX from 'xlsx'; 
+import * as XLSX from 'xlsx';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCyfuU05U_gEYQiIA15GcAWZM8uRyqXdjY",
@@ -20,19 +20,15 @@ const normalizar = (str) => String(str).trim().toLowerCase();
 
 export default function TorneoExpressPage() {
   const [tabActiva, setTabActiva] = useState('partidos');
-
   const [equipos, setEquipos] = useState([]);
   const [jugadores, setJugadores] = useState([]);
   const [partidos, setPartidos] = useState([]);
   const [cargando, setCargando] = useState(true);
-  
   const [procesandoExcel, setProcesandoExcel] = useState(false);
   const [modalJugador, setModalJugador] = useState(false);
-  
   const [partidoActivo, setPartidoActivo] = useState(null);
   const [statsPartido, setStatsPartido] = useState({});
   const [statsOriginalesReversion, setStatsOriginalesReversion] = useState({});
-
   const [equipoSeleccionadoId, setEquipoSeleccionadoId] = useState('');
   const [nuevoNombreJugador, setNuevoNombreJugador] = useState('');
   const [jugadorEditando, setJugadorEditando] = useState(null);
@@ -51,7 +47,6 @@ export default function TorneoExpressPage() {
       
       setCargando(false);
     } catch (error) {
-      console.error("Error al cargar:", error);
       setCargando(false);
     }
   };
@@ -65,12 +60,52 @@ export default function TorneoExpressPage() {
     return eq ? eq.nombre : 'Sin Equipo';
   };
 
-  // ==========================================
-  // CARGA MASIVA EXCEL
-  // ==========================================
+  const resetearTorneo = async () => {
+    if(!window.confirm("🚨 PELIGRO EXTREMO: ¿Estás seguro de que deseas BORRAR ABSOLUTAMENTE TODO el torneo? (Equipos, Jugadores, Partidos). Esta acción no se puede deshacer.")) return;
+    
+    const confirmacion = window.prompt("Para confirmar que deseas borrar la base de datos, escribe la palabra: BORRAR");
+    if(confirmacion !== "BORRAR") {
+      alert("Reseteo cancelado. Tus datos están a salvo.");
+      return;
+    }
+
+    setCargando(true);
+    try {
+      const parSnap = await getDocs(collection(db, 'torneo_partidos'));
+      const promesasPar = parSnap.docs.map(d => deleteDoc(doc(db, 'torneo_partidos', d.id)));
+      await Promise.all(promesasPar);
+
+      const jugSnap = await getDocs(collection(db, 'torneo_jugadores'));
+      const promesasJug = jugSnap.docs.map(d => deleteDoc(doc(db, 'torneo_jugadores', d.id)));
+      await Promise.all(promesasJug);
+
+      const eqSnap = await getDocs(collection(db, 'torneo_equipos'));
+      const promesasEq = eqSnap.docs.map(d => deleteDoc(doc(db, 'torneo_equipos', d.id)));
+      await Promise.all(promesasEq);
+
+      setEquipos([]);
+      setJugadores([]);
+      setPartidos([]);
+      alert("🗑️ Torneo reseteado exitosamente. La base de datos está completamente en blanco, lista para una nueva carga masiva.");
+
+    } catch (error) {
+      alert("Error al intentar limpiar la base de datos.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const procesarCargaMasiva = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (equipos.length > 0) {
+      if(!window.confirm("⚠️ ADVERTENCIA: Ya hay equipos registrados. Si cargas el Excel sin borrar primero, los datos podrían duplicarse. ¿Quieres continuar de todas formas? (Se recomienda usar el botón rojo 'Resetear Torneo' antes de subir un Excel nuevo).")) {
+         e.target.value = null;
+         return;
+      }
+    }
+
     setProcesandoExcel(true);
     const reader = new FileReader();
 
@@ -140,9 +175,6 @@ export default function TorneoExpressPage() {
     reader.readAsArrayBuffer(file);
   };
 
-  // ==========================================
-  // LÓGICA DE PARTIDO EN VIVO (CREAR Y REVERTIR)
-  // ==========================================
   const abrirPartido = (partido) => {
     setPartidoActivo(partido);
     
@@ -156,14 +188,12 @@ export default function TorneoExpressPage() {
       }
     });
 
-    // Cargar registro previo si existe (para partidos pausados o finalizados)
     if (partido.registroJugadores) {
        setStatsPartido(partido.registroJugadores);
     } else {
        setStatsPartido(statsIniciales);
     }
     
-    // Guardar copia exacta de cómo está el partido AHORA en caso de revertir
     if (partido.estado === 'Finalizado') {
        setStatsOriginalesReversion({
            golesLocal: partido.golesLocal,
@@ -220,7 +250,7 @@ export default function TorneoExpressPage() {
       });
       setPartidoActivo(null);
       await cargarDatos();
-    } catch (error) { console.error(error); alert("Error guardando progreso."); }
+    } catch (error) { alert("Error guardando progreso."); }
   };
 
   const finalizarPartido = async () => {
@@ -252,7 +282,6 @@ export default function TorneoExpressPage() {
     });
 
     try {
-      // 1. Actualizar Jugadores
       const updatesJugadores = Object.keys(statsPartido).map(async (jId) => {
         const jStats = statsPartido[jId];
         const jugadorGlobal = jugadores.find(j => j.id === jId);
@@ -276,7 +305,6 @@ export default function TorneoExpressPage() {
       });
       await Promise.all(updatesJugadores);
 
-      // 2. Actualizar Equipos
       const actualizarEquipo = async (eq, gf, gc, faltasPropias) => {
         let pts = 0, pg = 0, pe = 0, pp = 0;
         if (gf > gc) { pts = 3; pg = 1; }
@@ -298,7 +326,6 @@ export default function TorneoExpressPage() {
       await actualizarEquipo(eqLoc, golesLoc, golesVis, faltasLoc);
       await actualizarEquipo(eqVis, golesVis, golesLoc, faltasVis);
 
-      // 3. Finalizar Partido y guardar caja negra de estadísticas
       await updateDoc(doc(db, 'torneo_partidos', partidoActivo.id), {
         estado: 'Finalizado',
         golesLocal: golesLoc,
@@ -312,10 +339,9 @@ export default function TorneoExpressPage() {
       setPartidoActivo(null);
       await cargarDatos();
 
-    } catch (error) { console.error(error); alert("Error guardando datos."); }
+    } catch (error) { alert("Error guardando datos."); }
   };
 
-  // --- REVERTIR PARTIDO ---
   const revertirPartido = async () => {
     if (!window.confirm("⚠️ PELIGRO: Esto restará los puntos y goles de este partido a la tabla general y a los jugadores. ¿Continuar?")) return;
 
@@ -324,7 +350,6 @@ export default function TorneoExpressPage() {
     if (!eqLoc || !eqVis) { alert("Error: Equipos no encontrados."); return; }
 
     try {
-        // 1. Restar stats a los equipos
         const restarEquipo = async (eq, gf, gc, faltas, pts, pg, pe, pp) => {
             await updateDoc(doc(db, 'torneo_equipos', eq.id), {
                 pj: Math.max(0, (eq.pj || 0) - 1),
@@ -341,7 +366,6 @@ export default function TorneoExpressPage() {
         await restarEquipo(eqLoc, statsOriginalesReversion.golesLocal, statsOriginalesReversion.golesVisita, statsOriginalesReversion.faltasLocal, statsOriginalesReversion.puntosLocales, statsOriginalesReversion.pgLocales, statsOriginalesReversion.peLocales, statsOriginalesReversion.ppLocales);
         await restarEquipo(eqVis, statsOriginalesReversion.golesVisita, statsOriginalesReversion.golesLocal, statsOriginalesReversion.faltasVisita, statsOriginalesReversion.puntosVisita, statsOriginalesReversion.pgVisita, statsOriginalesReversion.peVisita, statsOriginalesReversion.ppVisita);
 
-        // 2. Restar stats a los jugadores usando la caja negra
         const regJugadores = statsOriginalesReversion.registroJugadores || {};
         const updatesJugadores = Object.keys(regJugadores).map(async (jId) => {
             const statsViejas = regJugadores[jId];
@@ -363,7 +387,6 @@ export default function TorneoExpressPage() {
         });
         await Promise.all(updatesJugadores);
 
-        // 3. Volver el partido a pendiente
         await updateDoc(doc(db, 'torneo_partidos', partidoActivo.id), {
             estado: 'Pendiente',
             golesLocal: 0,
@@ -373,22 +396,20 @@ export default function TorneoExpressPage() {
             registroJugadores: {}
         });
 
-        alert("🔙 Partido revertido con éxito. Ahora está 'Pendiente' para que corrijas los errores.");
+        alert("🔙 Partido revertido con éxito.");
         setPartidoActivo(null);
         await cargarDatos();
 
-    } catch (error) { console.error(error); alert("Error revirtiendo el partido."); }
+    } catch (error) { alert("Error revirtiendo el partido."); }
   };
 
-
-  // --- CRUD JUGADORES NORMAL ---
   const agregarJugador = async () => { 
     if (!nuevoNombreJugador.trim() || !equipoSeleccionadoId) return;
     try {
       const docRef = await addDoc(collection(db, 'torneo_jugadores'), { nombre: nuevoNombreJugador, equipoId: equipoSeleccionadoId, goles: 0, amarillas: 0, rojas: 0, golesEnContra: 0, fueArqueroAlgunaVez: false });
       setJugadores([...jugadores, { id: docRef.id, nombre: nuevoNombreJugador, equipoId: equipoSeleccionadoId, goles: 0, amarillas: 0, rojas: 0, golesEnContra: 0, fueArqueroAlgunaVez: false }]);
       setNuevoNombreJugador('');
-    } catch (error) { console.error(error); }
+    } catch (error) {}
   };
   const eliminarJugador = async (id) => {
     if(window.confirm("¿Eliminar jugador?")) { await deleteDoc(doc(db, 'torneo_jugadores', id)); setJugadores(jugadores.filter(j => j.id !== id)); }
@@ -408,14 +429,10 @@ export default function TorneoExpressPage() {
         snapshot.forEach(async (docSnap) => await deleteDoc(doc(db, 'torneo_jugadores', docSnap.id)));
         setEquipos(equipos.filter(eq => eq.id !== idEquipo));
         setJugadores(jugadores.filter(j => j.equipoId !== idEquipo));
-      } catch (error) { console.error(error); }
+      } catch (error) {}
     }
   };
 
-
-  // ==========================================
-  // COMPONENTES DE VISTA
-  // ==========================================
   const RenderTabla = ({ titulo, grupoFiltro }) => {
     const equiposFiltrados = equipos.filter(eq => eq.grupo === grupoFiltro).sort((a, b) => b.pf - a.pf || b.dg - a.dg);
     return (
@@ -426,15 +443,15 @@ export default function TorneoExpressPage() {
             <thead className="bg-neutral-900/50 text-purple-400">
               <tr>
                 <th className="p-2 text-left sticky left-0 bg-neutral-900 md:bg-transparent z-10 md:z-0 min-w-[120px]">Equipo</th>
-                <th className="p-2" title="Partidos Jugados">PJ</th>
-                <th className="p-2 text-amber-500" title="Faltas Acumuladas">FA</th>
-                <th className="p-2 hidden md:table-cell" title="Partidos Ganados">PG</th>
-                <th className="p-2 hidden md:table-cell" title="Partidos Empatados">PE</th>
-                <th className="p-2 hidden md:table-cell" title="Partidos Perdidos">PP</th>
-                <th className="p-2" title="Goles a Favor">GF</th>
-                <th className="p-2" title="Goles en Contra">GC</th>
-                <th className="p-2" title="Diferencia de Goles">DG</th>
-                <th className="p-2 text-white font-bold bg-purple-900/20" title="Puntaje Final">PF</th>
+                <th className="p-2">PJ</th>
+                <th className="p-2 text-amber-500">FA</th>
+                <th className="p-2 hidden md:table-cell">PG</th>
+                <th className="p-2 hidden md:table-cell">PE</th>
+                <th className="p-2 hidden md:table-cell">PP</th>
+                <th className="p-2">GF</th>
+                <th className="p-2">GC</th>
+                <th className="p-2">DG</th>
+                <th className="p-2 text-white font-bold bg-purple-900/20">PF</th>
                 <th className="p-2 text-gray-500 hidden md:table-cell">Del</th>
               </tr>
             </thead>
@@ -507,7 +524,6 @@ export default function TorneoExpressPage() {
     <main className="flex min-h-screen flex-col p-2 md:p-8 relative max-w-7xl mx-auto mt-4 md:mt-0">
       <h1 className="text-2xl md:text-3xl font-bold text-purple-500 mb-4 md:mb-6 text-center mt-2 md:mt-0">Torneo Express ⚡</h1>
 
-      {/* Tabs */}
       <div className="flex gap-1 md:gap-2 mb-4 md:mb-6 border-b border-neutral-700 pb-2 overflow-x-auto hide-scrollbar px-1">
         <button onClick={() => setTabActiva('posiciones')} className={`whitespace-nowrap px-3 md:px-4 py-2 text-sm md:text-base font-semibold rounded-t-lg transition-colors flex-1 text-center ${tabActiva === 'posiciones' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Tablas</button>
         <button onClick={() => setTabActiva('partidos')} className={`whitespace-nowrap px-3 md:px-4 py-2 text-sm md:text-base font-semibold rounded-t-lg transition-colors flex-1 text-center ${tabActiva === 'partidos' ? 'bg-purple-600 text-white' : 'bg-neutral-800 text-gray-400 hover:bg-neutral-700'}`}>Marcador</button>
@@ -584,7 +600,23 @@ export default function TorneoExpressPage() {
       {tabActiva === 'estadisticas' && (
         <div className="w-full animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 pb-10">
           
-          {/* TABLA GOLEADORES MEJORADA */}
+          <div className="bg-neutral-800 p-4 md:p-6 rounded-lg border border-neutral-700 shadow-lg flex flex-col gap-3 md:col-span-2 mb-4">
+             <h3 className="text-lg md:text-xl font-bold text-white mb-2">Administrar Torneo</h3>
+             
+             <button onClick={resetearTorneo} className="w-full bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white p-3 rounded font-medium text-left border border-red-700 flex justify-between transition-colors shadow-lg text-sm md:text-base mb-2">
+               🚨 Resetear Torneo (Borrar Todo) <span className="text-red-400 hover:text-white">→</span>
+             </button>
+
+             <div className="relative w-full">
+                <input type="file" accept=".xlsx, .xls" onChange={procesarCargaMasiva} disabled={procesandoExcel} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-wait" />
+                <button disabled={procesandoExcel} className="w-full bg-green-900/40 hover:bg-green-600 text-green-300 hover:text-white p-3 rounded font-medium text-left border border-green-700 flex justify-between transition-colors shadow-lg disabled:opacity-50 text-sm md:text-base">
+                  {procesandoExcel ? '⏳ Procesando...' : '📂 Importar Excel Masivo →'}
+                </button>
+             </div>
+             
+             <button onClick={() => setModalJugador(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors shadow-lg text-sm md:text-base mt-2">👤 Administrar Planteles Manual <span className="text-gray-400">→</span></button>
+          </div>
+
           <div className="bg-neutral-800 p-4 md:p-6 rounded-lg border border-neutral-700 shadow-lg">
             <h3 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">⚽ Top Goleadores</h3>
             <ul className="flex flex-col gap-2">
@@ -604,7 +636,6 @@ export default function TorneoExpressPage() {
             </ul>
           </div>
 
-          {/* TABLA ARQUEROS MEJORADA */}
           <div className="bg-neutral-800 p-4 md:p-6 rounded-lg border border-neutral-700 shadow-lg">
             <h3 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">🧤 Arqueros Menos Batidos</h3>
             <ul className="flex flex-col gap-2">
@@ -624,23 +655,9 @@ export default function TorneoExpressPage() {
               ))}
             </ul>
           </div>
-
-          <div className="bg-neutral-800 p-4 md:p-6 rounded-lg border border-neutral-700 shadow-lg flex flex-col gap-3 md:col-span-2">
-             <h3 className="text-lg md:text-xl font-bold text-white mb-2">Administrar Torneo</h3>
-             <div className="relative w-full">
-                <input type="file" accept=".xlsx, .xls" onChange={procesarCargaMasiva} disabled={procesandoExcel} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-wait" />
-                <button disabled={procesandoExcel} className="w-full bg-green-900/40 hover:bg-green-600 text-green-300 hover:text-white p-3 rounded font-medium text-left border border-green-700 flex justify-between transition-colors shadow-lg disabled:opacity-50 text-sm md:text-base">
-                  {procesandoExcel ? '⏳ Procesando...' : '📂 Importar Excel Masivo →'}
-                </button>
-             </div>
-             <button onClick={() => setModalJugador(true)} className="w-full bg-neutral-700 hover:bg-neutral-600 text-white p-3 rounded font-medium text-left border border-neutral-600 flex justify-between transition-colors shadow-lg text-sm md:text-base">👤 Administrar Planteles Manual <span className="text-gray-400">→</span></button>
-          </div>
         </div>
       )}
 
-      {/* ========================================= */}
-      {/* MODAL: MESA DE CONTROL CON BOTÓN DE GUARDADO EN VIVO Y REVERTIR */}
-      {/* ========================================= */}
       {partidoActivo && (
         <div className="fixed inset-0 bg-black/95 flex items-start md:items-center justify-center z-[100] p-0 md:p-6 animate-fade-in overflow-hidden">
           <div className="bg-neutral-900 w-full h-full md:h-auto md:max-h-[90vh] md:max-w-5xl md:rounded-xl md:border-2 md:border-purple-500 flex flex-col relative overflow-hidden">
@@ -670,7 +687,6 @@ export default function TorneoExpressPage() {
 
             <div className={`flex flex-col md:flex-row gap-0 md:gap-6 flex-1 overflow-y-auto p-2 md:p-6 ${partidoActivo.estado === 'Finalizado' ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
               
-              {/* Plantel Local */}
               <div className="flex-1 md:bg-neutral-800 md:p-4 rounded-lg md:border md:border-neutral-700 mb-6 md:mb-0">
                 <h3 className="text-sm md:text-lg font-bold text-gray-400 mb-2 md:mb-4 px-2 uppercase tracking-wide">🔵 {partidoActivo.local}</h3>
                 <div className="flex flex-col gap-1.5 md:gap-2">
@@ -702,7 +718,6 @@ export default function TorneoExpressPage() {
 
               <div className="w-full h-px bg-neutral-800 my-2 md:hidden"></div>
 
-              {/* Plantel Visita */}
               <div className="flex-1 md:bg-neutral-800 md:p-4 rounded-lg md:border md:border-neutral-700">
                 <h3 className="text-sm md:text-lg font-bold text-gray-400 mb-2 md:mb-4 px-2 uppercase tracking-wide">🔴 {partidoActivo.visita}</h3>
                 <div className="flex flex-col gap-1.5 md:gap-2">
@@ -756,7 +771,33 @@ export default function TorneoExpressPage() {
         .pb-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0.75rem); }
       `}} />
 
-      {/* Modal CRUD Jugadores Oculto */}
+      {modalJugador && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 animate-fade-in backdrop-blur-sm">
+           <div className="bg-neutral-800 p-6 rounded-lg w-full max-w-lg border border-purple-900/50 shadow-2xl flex flex-col max-h-[90vh]">
+            <h2 className="text-xl md:text-2xl font-bold text-white mb-4 border-b border-neutral-700 pb-2">Administrar Planteles</h2>
+            <select value={equipoSeleccionadoId} onChange={e => setEquipoSeleccionadoId(e.target.value)} className="w-full p-2.5 rounded bg-neutral-900 text-white border border-purple-900 focus:border-purple-500 outline-none mb-4 text-sm md:text-base"><option value="">-- Elige un equipo --</option>{equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre} ({eq.grupo})</option>)}</select>
+            {equipoSeleccionadoId && (
+              <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1">
+                <div className="bg-neutral-900/50 p-3 rounded border border-neutral-700"><div className="flex gap-2"><input type="text" value={nuevoNombreJugador} onChange={e => setNuevoNombreJugador(e.target.value)} placeholder="Nombre del Jugador" className="flex-1 p-2 rounded bg-neutral-900 text-white border border-neutral-700 focus:border-purple-500 outline-none text-sm md:text-base"/><button onClick={agregarJugador} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-bold text-sm md:text-base">Add</button></div></div>
+                <div>
+                  <ul className="flex flex-col gap-2">
+                    {jugadores.filter(j => j.equipoId === equipoSeleccionadoId).map((jug, idx) => (
+                      <li key={jug.id} className="flex justify-between items-center p-2 bg-neutral-900/80 rounded border border-neutral-700 text-sm md:text-base">
+                        {jugadorEditando === jug.id ? <input type="text" value={nombreEdicion} onChange={(e) => setNombreEdicion(e.target.value)} className="p-1 rounded bg-neutral-800 text-white border border-purple-500 outline-none w-full mr-2 text-sm" autoFocus /> : <span className="text-white font-medium truncate pr-2"><span className="text-gray-500 mr-1 md:mr-2">{idx + 1}.</span>{jug.nombre}</span>}
+                        <div className="flex gap-1 md:gap-2 shrink-0">
+                          {jugadorEditando === jug.id ? <button onClick={() => guardarEdicionJugador(jug.id)} className="text-green-400 bg-neutral-800 px-2 py-1 rounded text-xs font-bold border border-green-900">OK</button> : <button onClick={() => iniciarEdicionJugador(jug)} className="text-purple-400 bg-neutral-800 px-2 py-1 rounded text-xs md:text-sm border border-purple-900">✏️</button>}
+                          <button onClick={() => eliminarJugador(jug.id)} className="text-red-400 bg-neutral-800 px-2 py-1 rounded text-xs md:text-sm border border-red-900">🗑️</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            <button onClick={() => {setModalJugador(false); setEquipoSeleccionadoId('');}} className="w-full bg-neutral-700 active:bg-neutral-600 text-white py-3 rounded mt-4 text-sm md:text-base font-bold">Cerrar</button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
