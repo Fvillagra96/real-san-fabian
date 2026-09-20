@@ -68,6 +68,9 @@ export default function TorneoExpressPage() {
   // ==========================================
   // FUNCIÓN MEJORADA: CARGA MASIVA EXCEL
   // ==========================================
+ // ==========================================
+  // FUNCIÓN ULTRA-INTELIGENTE: CARGA MASIVA EXCEL
+  // ==========================================
   const procesarCargaMasiva = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -75,58 +78,77 @@ export default function TorneoExpressPage() {
     setProcesandoExcel(true);
     const reader = new FileReader();
 
-    // Usamos ArrayBuffer que es mucho más seguro en navegadores modernos
     reader.onload = async (evt) => {
       try {
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: 'array' });
 
-        // 1. Validar que existan las hojas exactas
-        if (!wb.Sheets["Equipos"]) throw new Error("Falta la pestaña llamada 'Equipos'. Verifica el nombre en el Excel.");
-        if (!wb.Sheets["Jugadores"]) throw new Error("Falta la pestaña llamada 'Jugadores'. Verifica el nombre en el Excel.");
+        // Normalizador para ignorar mayúsculas y espacios
+        const normalizar = (str) => String(str).trim().toLowerCase();
 
-        const dataEquipos = XLSX.utils.sheet_to_json(wb.Sheets["Equipos"]);
-        const dataJugadores = XLSX.utils.sheet_to_json(wb.Sheets["Jugadores"]);
+        // 1. Buscar hojas inteligentemente
+        const nombreHojaEquipos = wb.SheetNames.find(n => normalizar(n).includes("equipo"));
+        const nombreHojaJugadores = wb.SheetNames.find(n => normalizar(n).includes("jugador"));
 
-        if (dataEquipos.length === 0) throw new Error("La pestaña 'Equipos' está vacía.");
+        if (!nombreHojaEquipos) throw new Error("No se encontró una pestaña que se llame 'Equipos'.");
+        if (!nombreHojaJugadores) throw new Error("No se encontró una pestaña que se llame 'Jugadores'.");
+
+        const dataEquipos = XLSX.utils.sheet_to_json(wb.Sheets[nombreHojaEquipos]);
+        const dataJugadores = XLSX.utils.sheet_to_json(wb.Sheets[nombreHojaJugadores]);
+
+        if (dataEquipos.length === 0) throw new Error("La pestaña de Equipos está vacía.");
 
         const mapaIDsFirebase = {}; 
 
+        // Función para buscar columnas sin importar cómo se escribieron
+        const buscarColumna = (obj, palabraClave) => {
+          return Object.keys(obj).find(k => normalizar(k).includes(palabraClave));
+        };
+
         // 2. Subir Equipos
         for (let eq of dataEquipos) {
-          // Validar que los títulos de las columnas existan
-          if (!eq["Nombre Equipo"] || !eq["Grupo"]) {
-             throw new Error(`Faltan columnas en la hoja Equipos. Asegúrate de tener 'Nombre Equipo' y 'Grupo'.`);
+          const colNombreEq = buscarColumna(eq, "nombre") || buscarColumna(eq, "equipo");
+          const colDT = buscarColumna(eq, "encargado") || buscarColumna(eq, "dt");
+          const colGrupo = buscarColumna(eq, "grupo") || buscarColumna(eq, "categor");
+
+          if (!colNombreEq || !colGrupo) {
+             throw new Error(`Faltan columnas en Equipos. Necesita 'Nombre Equipo' y 'Grupo'.`);
           }
 
+          const nombreEquipoVal = String(eq[colNombreEq]).trim();
+          if (!nombreEquipoVal) continue;
+
           const nuevoEquipo = {
-            nombre: String(eq["Nombre Equipo"]).trim(),
-            encargado: eq["Encargado / DT"] ? String(eq["Encargado / DT"]).trim() : "Sin DT",
-            grupo: String(eq["Grupo"]).trim(),
+            nombre: nombreEquipoVal,
+            encargado: eq[colDT] ? String(eq[colDT]).trim() : "Sin DT",
+            grupo: String(eq[colGrupo]).trim(),
             pj: 0, fa: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0, pf: 0
           };
           
           const docRef = await addDoc(collection(db, 'torneo_equipos'), nuevoEquipo);
-          mapaIDsFirebase[nuevoEquipo.nombre] = docRef.id; 
+          // Guardamos el nombre en minúsculas para compararlo fácil después
+          mapaIDsFirebase[nombreEquipoVal.toLowerCase()] = docRef.id; 
         }
 
         // 3. Subir Jugadores
         for (let jug of dataJugadores) {
-          // Si la fila está vacía, la saltamos
-          if (!jug["Nombre Jugador"] || !jug["Equipo Perteneciente"]) continue; 
+          const colNombreJug = buscarColumna(jug, "nombre") || buscarColumna(jug, "jugador");
+          const colEqPert = buscarColumna(jug, "equipo") || buscarColumna(jug, "pertenec");
+
+          if (!colNombreJug || !colEqPert || !jug[colNombreJug] || !jug[colEqPert]) continue; 
           
-          const nombreEq = String(jug["Equipo Perteneciente"]).trim();
-          const equipoIdReal = mapaIDsFirebase[nombreEq]; 
+          const nombreEqEnExcel = String(jug[colEqPert]).trim().toLowerCase();
+          const equipoIdReal = mapaIDsFirebase[nombreEqEnExcel]; 
 
           if (equipoIdReal) {
             const nuevoJugador = {
-              nombre: String(jug["Nombre Jugador"]).trim(),
+              nombre: String(jug[colNombreJug]).trim(),
               equipoId: equipoIdReal,
               goles: 0, amarillas: 0, rojas: 0
             };
             await addDoc(collection(db, 'torneo_jugadores'), nuevoJugador);
           } else {
-             console.warn(`No se encontró el equipo "${nombreEq}" para el jugador ${jug["Nombre Jugador"]}. Se omitió.`);
+             console.warn(`Jugador omitido: ${jug[colNombreJug]}. No se encontró el equipo "${jug[colEqPert]}"`);
           }
         }
 
